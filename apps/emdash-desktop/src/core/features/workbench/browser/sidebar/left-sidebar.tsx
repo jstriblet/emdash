@@ -1,7 +1,8 @@
-import { Clock, FolderInput, MessageSquareShare, Settings } from 'lucide-react';
+import { Clock, FolderInput, MessageCircle, MessageSquareShare, Settings } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { orchestratorViewDef } from '@core/features/orchestrator/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { BoundShortcut } from '@core/primitives/keybindings/browser/shortcut';
@@ -70,6 +71,17 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarSearchTrigger />
+            <SidebarMenuButton
+              isActive={isCurrentView(currentView, 'orchestrator')}
+              onClick={() => navigate(orchestratorViewDef())}
+              aria-label="Thread"
+              className="w-full justify-between"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <MessageCircle className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
+                <span className="truncate">Thread</span>
+              </span>
+            </SidebarMenuButton>
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'automations')}
               onClick={() => navigate(automationsViewDef())}

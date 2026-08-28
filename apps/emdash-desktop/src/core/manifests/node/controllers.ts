@@ -1,3 +1,4 @@
+import { OrchestratorRuntime } from '@emdash/core/runtimes/orchestrator/node';
 import type { RuntimeBroker } from '@emdash/core/services/runtime-broker/api';
 import type { Scope } from '@emdash/shared/concurrency';
 import type { Logger } from '@emdash/shared/logger';
@@ -42,6 +43,7 @@ import type { PromptLibraryService } from '@core/features/library/node/prompt-li
 import { createPromptLibraryWireController } from '@core/features/library/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
+import { createOrchestratorWireController } from '@core/features/orchestrator/node/wire-controller';
 import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
 import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
@@ -259,6 +261,12 @@ export const desktopNodeControllers = {
   },
   mcp: {
     create: ({ runtimes }) => createMcpWireController({ runtimes }),
+  },
+  orchestrator: {
+    create: () =>
+      createOrchestratorWireController(
+        new OrchestratorRuntime({ baseUrl: process.env.EMDASH_ORCHESTRATOR_URL })
+      ),
   },
   skills: {
     create: ({ runtimes }) => createSkillsWireController({ runtimes }),

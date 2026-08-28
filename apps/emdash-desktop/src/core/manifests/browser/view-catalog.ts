@@ -1,4 +1,5 @@
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { orchestratorViewDef } from '@core/features/orchestrator/contributions/views';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
@@ -8,6 +9,7 @@ import { defineViewCatalog } from '@core/primitives/views/api';
 export const viewCatalog = defineViewCatalog([
   homeViewDef,
   automationsViewDef,
+  orchestratorViewDef,
   projectViewDef,
   taskViewDef,
   settingsViewDef,

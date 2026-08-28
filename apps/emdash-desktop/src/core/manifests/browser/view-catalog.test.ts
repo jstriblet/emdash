@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { automationsViewDef } from '@core/features/automations/contributions/views';
+import { orchestratorViewDef } from '@core/features/orchestrator/contributions/views';
 import { projectViewDef } from '@core/features/projects/contributions/views';
 import { settingsViewDef } from '@core/features/settings/contributions/views';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
@@ -11,6 +12,7 @@ describe('viewCatalog', () => {
     expect(viewCatalog.defs.map(({ id }) => id)).toEqual([
       'home',
       'automations',
+      'orchestrator',
       'project',
       'task',
       'settings',
@@ -22,6 +24,8 @@ describe('viewCatalog', () => {
     expect(homeViewDef.safeRef({})).toBeDefined();
     expect(automationsViewDef.safeRef(undefined)).toBeDefined();
     expect(automationsViewDef.safeRef({})).toBeDefined();
+    expect(orchestratorViewDef.safeRef(undefined)).toBeDefined();
+    expect(orchestratorViewDef.safeRef({})).toBeDefined();
     expect(settingsViewDef.safeRef(undefined)).toBeDefined();
     expect(settingsViewDef.safeRef({})).toBeDefined();
   });
@@ -60,6 +64,7 @@ describe('viewCatalog', () => {
     ).toEqual({
       home: 'home_viewed',
       automations: 'automations_viewed',
+      orchestrator: 'orchestrator_viewed',
       project: 'project_viewed',
       task: 'task_viewed',
       settings: 'settings_viewed',

@@ -37,6 +37,8 @@ export default defineConfig({
     'services-fs-watch-node': 'src/services/fs-watch/node/index.ts',
     'runtimes-git-api': 'src/runtimes/git/api/index.ts',
     'runtimes-git-node': 'src/runtimes/git/node/index.ts',
+    'runtimes-orchestrator-api': 'src/runtimes/orchestrator/api/index.ts',
+    'runtimes-orchestrator-node': 'src/runtimes/orchestrator/node/index.ts',
     'runtimes-files-api': 'src/runtimes/files/api/index.ts',
     'runtimes-files-node': 'src/runtimes/files/node/index.ts',
     'runtimes-file-search-api': 'src/runtimes/file-search/api/index.ts',

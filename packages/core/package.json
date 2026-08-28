@@ -195,6 +195,16 @@
       "types": "./dist/runtimes-git-api.d.mts",
       "default": "./dist/runtimes-git-api.mjs"
     },
+    "./runtimes/orchestrator/api": {
+      "development": "./src/runtimes/orchestrator/api/index.ts",
+      "types": "./dist/runtimes-orchestrator-api.d.mts",
+      "default": "./dist/runtimes-orchestrator-api.mjs"
+    },
+    "./runtimes/orchestrator/node": {
+      "development": "./src/runtimes/orchestrator/node/index.ts",
+      "types": "./dist/runtimes-orchestrator-node.d.mts",
+      "default": "./dist/runtimes-orchestrator-node.mjs"
+    },
     "./runtimes/git/node": {
       "development": "./src/runtimes/git/node/index.ts",
       "types": "./dist/runtimes-git-node.d.mts",
