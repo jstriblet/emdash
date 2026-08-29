@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -26,6 +26,7 @@ type OrchestratorServiceOptions = {
 export class OrchestratorService {
   private runtime: OrchestratorRuntime;
   private server: Server | undefined;
+  private macBuild: ChildProcess | undefined;
 
   constructor(
     private readonly ssh: SshServiceHandle,
@@ -76,6 +77,37 @@ export class OrchestratorService {
     });
     const message = stdout.trim() || 'Fork is already up to date.';
     return { updated: !/already up[ -]to[ -]date/i.test(message), message };
+  }
+
+  async installMacApp(): Promise<OrchestratorForkUpdate> {
+    if (!import.meta.env.DEV || process.platform !== 'darwin') {
+      throw new Error('Mac app installation is only available from the macOS development app');
+    }
+    if (this.macBuild && this.macBuild.exitCode === null) {
+      return { updated: false, message: 'The Mac app is already being built.' };
+    }
+
+    const repositoryRoot = resolve(process.cwd(), '../..');
+    const artifact = resolve(repositoryRoot, 'apps/emdash-desktop/release/emdash-arm64.dmg');
+    const build = spawn(
+      'pnpm',
+      ['--dir', 'apps/emdash-desktop', 'run', 'package:mac', '--', '--arm64', '--publish', 'never'],
+      { cwd: repositoryRoot, env: process.env, stdio: 'ignore' }
+    );
+    this.macBuild = build;
+    build.once('exit', (code) => {
+      this.macBuild = undefined;
+      if (code !== 0) return;
+      const opener = spawn('open', [artifact], { detached: true, stdio: 'ignore' });
+      opener.unref();
+    });
+    build.once('error', () => {
+      this.macBuild = undefined;
+    });
+    return {
+      updated: true,
+      message: 'Building the Mac app. Its installer will open when it is ready.',
+    };
   }
 
   health(): Promise<OrchestratorHealth> {

@@ -77,6 +77,7 @@ export function ThreadPanel() {
   const [connecting, setConnecting] = useState(false);
   const [updatingFork, setUpdatingFork] = useState(false);
   const [updateNotice, setUpdateNotice] = useState<string>();
+  const [installingMacApp, setInstallingMacApp] = useState(false);
   const [machines, setMachines] = useState<OrcMachine[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleEntries = useMemo(() => {
@@ -182,6 +183,19 @@ export function ThreadPanel() {
       setUpdateNotice(cause instanceof Error ? cause.message : 'Unable to update the fork');
     } finally {
       setUpdatingFork(false);
+    }
+  }
+
+  async function installMacApp() {
+    setInstallingMacApp(true);
+    setUpdateNotice(undefined);
+    try {
+      const result = await (await getOrchestratorClient()).installMacApp(undefined);
+      setUpdateNotice(result.message);
+    } catch (cause) {
+      setUpdateNotice(cause instanceof Error ? cause.message : 'Unable to build the Mac app');
+    } finally {
+      setInstallingMacApp(false);
     }
   }
 
@@ -336,14 +350,24 @@ export function ThreadPanel() {
           />
         </div>
         <div className="mx-auto mt-1 flex max-w-[920px] justify-between px-1 text-[11px] text-[#625f5b]">
-          <button
-            type="button"
-            onClick={() => void updateFork()}
-            disabled={updatingFork}
-            className="hover:text-[#b6b0a7] disabled:cursor-wait"
-          >
-            {updatingFork ? 'updating fork…' : 'update fork'}
-          </button>
+          <span className="flex gap-4">
+            <button
+              type="button"
+              onClick={() => void updateFork()}
+              disabled={updatingFork}
+              className="hover:text-[#b6b0a7] disabled:cursor-wait"
+            >
+              {updatingFork ? 'updating fork…' : 'update fork'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void installMacApp()}
+              disabled={installingMacApp}
+              className="hover:text-[#b6b0a7] disabled:cursor-wait"
+            >
+              {installingMacApp ? 'starting build…' : 'install mac app'}
+            </button>
+          </span>
           <span>
             {health ? `${health.provider}${health.model ? `/${health.model}` : ''}` : 'offline'}
           </span>

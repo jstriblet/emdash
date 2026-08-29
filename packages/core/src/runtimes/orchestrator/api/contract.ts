@@ -15,6 +15,7 @@ export const orchestratorContract = defineContract({
     output: orchestratorHealthSchema,
   }),
   updateFork: procedure({ input: z.void(), output: orchestratorForkUpdateSchema }),
+  installMacApp: procedure({ input: z.void(), output: orchestratorForkUpdateSchema }),
   health: procedure({ input: z.void(), output: orchestratorHealthSchema }),
   thread: procedure({
     input: z.object({ limit: z.number().int().min(1).max(200).default(100) }),
