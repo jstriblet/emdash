@@ -1,5 +1,5 @@
 import { Textarea } from '@emdash/ui/react/primitives';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 
@@ -11,6 +11,37 @@ function entryMarker(entry: OrchestratorEntry): string {
   return '•';
 }
 
+type Activity = {
+  id: string;
+  kind: 'reasoning' | 'command' | 'file_change' | 'tool' | 'web_search' | 'plan';
+  status: 'in_progress' | 'completed' | 'failed';
+  title: string;
+  detail: string;
+};
+
+function parseActivity(entry: OrchestratorEntry): Activity | undefined {
+  if (entry.role !== 'activity') return undefined;
+  try {
+    const value: unknown = JSON.parse(entry.content);
+    if (!value || typeof value !== 'object') return undefined;
+    const activity = value as Partial<Activity>;
+    if (
+      typeof activity.id !== 'string' ||
+      typeof activity.kind !== 'string' ||
+      typeof activity.status !== 'string' ||
+      typeof activity.title !== 'string'
+    ) {
+      return undefined;
+    }
+    return {
+      ...activity,
+      detail: typeof activity.detail === 'string' ? activity.detail : '',
+    } as Activity;
+  } catch {
+    return undefined;
+  }
+}
+
 export function ThreadPanel() {
   const [entries, setEntries] = useState<OrchestratorEntry[]>([]);
   const [health, setHealth] = useState<OrchestratorHealth>();
@@ -18,6 +49,17 @@ export function ThreadPanel() {
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const visibleEntries = useMemo(() => {
+    const latestActivity = new Map<string, number>();
+    entries.forEach((entry) => {
+      const activity = parseActivity(entry);
+      if (activity) latestActivity.set(activity.id, entry.id);
+    });
+    return entries.filter((entry) => {
+      const activity = parseActivity(entry);
+      return !activity || latestActivity.get(activity.id) === entry.id;
+    });
+  }, [entries]);
 
   const refresh = useCallback(async () => {
     try {
@@ -100,31 +142,57 @@ export function ThreadPanel() {
                 Type a task below. Enter sends · Shift+Enter adds a line
               </p>
             </div>
-            {entries.map((entry) => (
-              <article
-                key={entry.id}
-                className={`mb-6 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 ${
-                  entry.role === 'system' ? 'text-[#817d77]' : ''
-                }`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={entry.role === 'user' ? 'text-[#d8cdbd]' : 'text-[#88837c]'}
-                >
-                  {entryMarker(entry)}
-                </span>
-                <div
-                  className={`min-w-0 whitespace-pre-wrap ${
-                    entry.role === 'user' ? 'font-semibold text-[#f1eee8]' : ''
+            {visibleEntries.map((entry) => {
+              const activity = parseActivity(entry);
+              if (activity) {
+                const isWorking = activity.status === 'in_progress';
+                return (
+                  <details
+                    key={entry.id}
+                    className="group mb-3 pl-5 text-[#918c85]"
+                    open={isWorking}
+                  >
+                    <summary className="cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
+                      <span className={isWorking ? 'animate-pulse text-[#d8cdbd]' : ''}>
+                        {isWorking ? '◌' : activity.status === 'failed' ? '×' : '✓'}
+                      </span>{' '}
+                      <span>{activity.title}</span>
+                      <span className="ml-2 text-[#56534f]">{activity.kind.replace('_', ' ')}</span>
+                    </summary>
+                    {activity.detail && (
+                      <pre className="mt-1 max-h-64 overflow-auto border-l border-[#383633] pl-4 text-xs leading-5 whitespace-pre-wrap text-[#706c66]">
+                        {activity.detail}
+                      </pre>
+                    )}
+                  </details>
+                );
+              }
+              return (
+                <article
+                  key={entry.id}
+                  className={`mb-6 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 ${
+                    entry.role === 'system' ? 'text-[#817d77]' : ''
                   }`}
                 >
-                  {entry.content}
-                  {entry.role === 'user' && entry.surface !== 'emdash' && (
-                    <span className="ml-2 font-normal text-[#625f5b]">[{entry.surface}]</span>
-                  )}
-                </div>
-              </article>
-            ))}
+                  <span
+                    aria-hidden="true"
+                    className={entry.role === 'user' ? 'text-[#d8cdbd]' : 'text-[#88837c]'}
+                  >
+                    {entryMarker(entry)}
+                  </span>
+                  <div
+                    className={`min-w-0 whitespace-pre-wrap ${
+                      entry.role === 'user' ? 'font-semibold text-[#f1eee8]' : ''
+                    }`}
+                  >
+                    {entry.content}
+                    {entry.role === 'user' && entry.surface !== 'emdash' && (
+                      <span className="ml-2 font-normal text-[#625f5b]">[{entry.surface}]</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
             {(sending || health?.busy) && (
               <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
                 <span>•</span>

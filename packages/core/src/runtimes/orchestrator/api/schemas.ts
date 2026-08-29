@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-export const orchestratorRoleSchema = z.enum(['user', 'assistant', 'assistant_progress', 'system']);
+export const orchestratorRoleSchema = z.enum([
+  'user',
+  'assistant',
+  'assistant_progress',
+  'activity',
+  'system',
+]);
 
 export const orchestratorSurfaceSchema = z.enum(['terminal', 'imessage', 'emdash']);
 
