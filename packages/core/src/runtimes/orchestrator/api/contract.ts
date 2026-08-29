@@ -2,6 +2,7 @@ import { defineContract, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
 import {
   orchestratorHealthSchema,
+  orchestratorForkUpdateSchema,
   orchestratorReplySchema,
   orchestratorThreadSchema,
 } from './schemas';
@@ -13,6 +14,7 @@ export const orchestratorContract = defineContract({
     input: z.object({ connectionId: z.string().min(1) }),
     output: orchestratorHealthSchema,
   }),
+  updateFork: procedure({ input: z.void(), output: orchestratorForkUpdateSchema }),
   health: procedure({ input: z.void(), output: orchestratorHealthSchema }),
   thread: procedure({
     input: z.object({ limit: z.number().int().min(1).max(200).default(100) }),

@@ -1,6 +1,10 @@
+import { execFile } from 'node:child_process';
 import { createServer, type Server, type Socket } from 'node:net';
+import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import type {
   OrchestratorHealth,
+  OrchestratorForkUpdate,
   OrchestratorReply,
   OrchestratorThread,
 } from '@emdash/core/runtimes/orchestrator/api';
@@ -9,6 +13,9 @@ import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 
 const ORC_HOST = '127.0.0.1';
 const ORC_PORT = 8790;
+const execFileAsync = promisify(execFile);
+const FORK_URL = 'https://github.com/jstriblet/emdash.git';
+const FORK_BRANCH = 'phase-4-orchestrator-thread';
 
 type OrchestratorServiceOptions = {
   baseUrl?: string;
@@ -56,6 +63,19 @@ export class OrchestratorService {
       await this.disposeTunnel();
       throw error;
     }
+  }
+
+  async updateFork(): Promise<OrchestratorForkUpdate> {
+    if (!import.meta.env.DEV) {
+      throw new Error('Source updates are only available in a development checkout');
+    }
+    const repositoryRoot = resolve(process.cwd(), '../..');
+    const { stdout } = await execFileAsync('git', ['pull', '--ff-only', FORK_URL, FORK_BRANCH], {
+      cwd: repositoryRoot,
+      timeout: 120_000,
+    });
+    const message = stdout.trim() || 'Fork is already up to date.';
+    return { updated: !/already up[ -]to[ -]date/i.test(message), message };
   }
 
   health(): Promise<OrchestratorHealth> {

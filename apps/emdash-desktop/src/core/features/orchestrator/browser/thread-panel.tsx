@@ -75,6 +75,8 @@ export function ThreadPanel() {
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [updatingFork, setUpdatingFork] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<string>();
   const [machines, setMachines] = useState<OrcMachine[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleEntries = useMemo(() => {
@@ -167,6 +169,19 @@ export function ThreadPanel() {
       setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function updateFork() {
+    setUpdatingFork(true);
+    setUpdateNotice(undefined);
+    try {
+      const result = await (await getOrchestratorClient()).updateFork(undefined);
+      setUpdateNotice(result.message.split('\n').at(-1));
+    } catch (cause) {
+      setUpdateNotice(cause instanceof Error ? cause.message : 'Unable to update the fork');
+    } finally {
+      setUpdatingFork(false);
     }
   }
 
@@ -294,6 +309,9 @@ export function ThreadPanel() {
         )}
       </div>
       <form onSubmit={submit} className="bg-[#111417] px-5 pb-4 sm:px-8">
+        {updateNotice && (
+          <p className="mx-auto mb-2 max-w-[920px] text-xs text-[#817d77]">{updateNotice}</p>
+        )}
         {error && entries.length > 0 && (
           <p className="mx-auto mb-2 max-w-[920px] text-xs text-[#c98279]">! {error}</p>
         )}
@@ -318,7 +336,14 @@ export function ThreadPanel() {
           />
         </div>
         <div className="mx-auto mt-1 flex max-w-[920px] justify-between px-1 text-[11px] text-[#625f5b]">
-          <span>{sending || health?.busy ? 'esc to interrupt' : '? for shortcuts'}</span>
+          <button
+            type="button"
+            onClick={() => void updateFork()}
+            disabled={updatingFork}
+            className="hover:text-[#b6b0a7] disabled:cursor-wait"
+          >
+            {updatingFork ? 'updating fork…' : 'update fork'}
+          </button>
           <span>
             {health ? `${health.provider}${health.model ? `/${health.model}` : ''}` : 'offline'}
           </span>

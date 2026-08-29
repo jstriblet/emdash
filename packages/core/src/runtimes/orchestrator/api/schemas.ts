@@ -40,7 +40,13 @@ export const orchestratorReplySchema = z.object({
   error: z.string().optional(),
 });
 
+export const orchestratorForkUpdateSchema = z.object({
+  updated: z.boolean(),
+  message: z.string(),
+});
+
 export type OrchestratorEntry = z.infer<typeof orchestratorEntrySchema>;
 export type OrchestratorHealth = z.infer<typeof orchestratorHealthSchema>;
 export type OrchestratorThread = z.infer<typeof orchestratorThreadSchema>;
 export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
+export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
