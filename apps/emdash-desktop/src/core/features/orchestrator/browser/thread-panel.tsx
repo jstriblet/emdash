@@ -1,10 +1,13 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
+
+type OrcMachine = { id: string; name: string };
 
 function entryMarker(entry: OrchestratorEntry): string {
   if (entry.role === 'user') return '›';
@@ -71,6 +74,8 @@ export function ThreadPanel() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [machines, setMachines] = useState<OrcMachine[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
@@ -116,6 +121,13 @@ export function ThreadPanel() {
   }, []);
 
   useEffect(() => {
+    void getMachinesClient()
+      .then((client) => client.getMachines(undefined))
+      .then((saved) => setMachines(saved.map(({ id, name }) => ({ id, name }))))
+      .catch(() => setMachines([]));
+  }, []);
+
+  useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
@@ -144,6 +156,20 @@ export function ThreadPanel() {
     }
   }
 
+  async function connect(connectionId: string) {
+    setConnecting(true);
+    setError(undefined);
+    try {
+      const client = await getOrchestratorClient();
+      await client.connect({ connectionId });
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#111417] font-mono text-[#e8e4dd]">
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 text-[13px] leading-6 sm:px-8">
@@ -153,9 +179,24 @@ export function ThreadPanel() {
               <span className="text-[#d8cdbd]">!</span> unable to start Orc
             </p>
             <p className="pl-4">{error}</p>
-            <p className="mt-2 pl-4">
-              set EMDASH_ORCHESTRATOR_URL if Orc is not listening on 127.0.0.1:8790
-            </p>
+            {machines.length > 0 && (
+              <div className="mt-5 flex flex-wrap gap-2 pl-4">
+                {machines.map((machine) => (
+                  <button
+                    key={machine.id}
+                    type="button"
+                    disabled={connecting}
+                    onClick={() => void connect(machine.id)}
+                    className="border border-[#706b64] px-3 py-1.5 text-[#e8e4dd] hover:bg-[#24272a] disabled:cursor-wait disabled:opacity-50"
+                  >
+                    {connecting ? 'Connecting…' : `Connect to Orc on ${machine.name}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            {machines.length === 0 && (
+              <p className="mt-2 pl-4">Add the Orc host under Settings → Machines.</p>
+            )}
           </div>
         ) : (
           <div className="mx-auto w-full max-w-[920px]">

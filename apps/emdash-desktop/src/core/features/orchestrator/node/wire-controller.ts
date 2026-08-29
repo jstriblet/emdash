@@ -7,6 +7,7 @@ import {
 import { createController, type Controller } from '@emdash/wire/rpc';
 
 export type OrchestratorRuntimePort = {
+  connect(connectionId: string): Promise<OrchestratorHealth>;
   health(): Promise<OrchestratorHealth>;
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
@@ -14,6 +15,7 @@ export type OrchestratorRuntimePort = {
 
 export function createOrchestratorWireController(runtime: OrchestratorRuntimePort): Controller {
   return createController(orchestratorContract, {
+    connect: ({ connectionId }) => runtime.connect(connectionId),
     health: () => runtime.health(),
     thread: ({ limit }) => runtime.thread(limit),
     send: ({ text }) => runtime.send(text),
