@@ -6,6 +6,7 @@ import { getOrchestratorClient } from '../api/browser/client';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
+const IS_DEVELOPMENT = import.meta.env.DEV;
 
 type OrcMachine = { id: string; name: string };
 
@@ -350,24 +351,28 @@ export function ThreadPanel() {
           />
         </div>
         <div className="mx-auto mt-1 flex max-w-[920px] justify-between px-1 text-[11px] text-[#625f5b]">
-          <span className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => void updateFork()}
-              disabled={updatingFork}
-              className="hover:text-[#b6b0a7] disabled:cursor-wait"
-            >
-              {updatingFork ? 'updating fork…' : 'update fork'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void installMacApp()}
-              disabled={installingMacApp}
-              className="hover:text-[#b6b0a7] disabled:cursor-wait"
-            >
-              {installingMacApp ? 'starting build…' : 'install mac app'}
-            </button>
-          </span>
+          {IS_DEVELOPMENT ? (
+            <span className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => void updateFork()}
+                disabled={updatingFork}
+                className="hover:text-[#b6b0a7] disabled:cursor-wait"
+              >
+                {updatingFork ? 'updating fork…' : 'update fork'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void installMacApp()}
+                disabled={installingMacApp}
+                className="hover:text-[#b6b0a7] disabled:cursor-wait"
+              >
+                {installingMacApp ? 'starting build…' : 'install mac app'}
+              </button>
+            </span>
+          ) : (
+            <span>Emdash Orc</span>
+          )}
           <span>
             {health ? `${health.provider}${health.model ? `/${health.model}` : ''}` : 'offline'}
           </span>
