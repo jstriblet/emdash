@@ -1,5 +1,5 @@
 import { Textarea } from '@emdash/ui/react/primitives';
-import { Send, ServerOff } from 'lucide-react';
+import { ServerOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
@@ -7,9 +7,15 @@ import { getOrchestratorClient } from '../api/browser/client';
 const REFRESH_INTERVAL_MS = 2_000;
 
 function entryLabel(entry: OrchestratorEntry): string {
-  if (entry.role === 'user') return entry.surface === 'emdash' ? 'You' : `You · ${entry.surface}`;
-  if (entry.role === 'system') return 'Orc · system';
-  return 'Orc';
+  if (entry.role === 'user') return entry.surface === 'emdash' ? 'you' : `you · ${entry.surface}`;
+  if (entry.role === 'system') return 'system';
+  return 'orc';
+}
+
+function entryMarker(entry: OrchestratorEntry): string {
+  if (entry.role === 'user') return '❯';
+  if (entry.role === 'system') return '!';
+  return '●';
 }
 
 export function ThreadPanel() {
@@ -65,14 +71,24 @@ export function ThreadPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <div className="flex items-center justify-between border-b border-border px-5 py-2 text-xs text-foreground-muted">
-        <span>
-          {health ? `${health.provider}${health.model ? ` · ${health.model}` : ''}` : 'Orc'}
+    <div className="flex h-full min-h-0 flex-col bg-background font-mono text-foreground">
+      <div className="flex items-center justify-between border-b border-border px-6 py-3 text-xs">
+        <div className="flex items-baseline gap-3">
+          <span className="font-semibold tracking-[0.18em] text-[#d8cdbd]">ORC</span>
+          <span className="text-foreground-passive">
+            {health
+              ? `${health.provider}${health.model ? `/${health.model}` : ''} · ${health.entries} turns · ${health.memories} memories`
+              : 'harness'}
+          </span>
+        </div>
+        <span className="flex items-center gap-2 text-foreground-muted">
+          <span
+            className={`size-1.5 rounded-full ${health ? 'bg-[#a8b59a]' : 'bg-foreground-passive'}`}
+          />
+          {sending || health?.busy ? 'working' : health ? 'ready' : 'offline'}
         </span>
-        <span>{sending || health?.busy ? 'Thinking…' : health ? 'Connected' : 'Disconnected'}</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
         {error && entries.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-foreground-muted">
             <ServerOff className="size-8" strokeWidth={1.5} />
@@ -85,21 +101,31 @@ export function ThreadPanel() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+          <div className="mx-auto flex w-full max-w-4xl flex-col">
             {entries.map((entry) => (
-              <article key={entry.id} className={entry.role === 'user' ? 'ml-12' : 'mr-12'}>
-                <div className="mb-1 flex items-center gap-2 text-xs text-foreground-passive">
-                  <span>{entryLabel(entry)}</span>
-                  <time dateTime={entry.ts}>{new Date(entry.ts).toLocaleString()}</time>
-                </div>
-                <div
-                  className={
-                    entry.role === 'user'
-                      ? 'rounded-xl bg-background-2 px-4 py-3 whitespace-pre-wrap'
-                      : 'px-1 py-2 whitespace-pre-wrap'
-                  }
+              <article
+                key={entry.id}
+                className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 border-b border-border/50 py-5 last:border-b-0"
+              >
+                <span
+                  aria-hidden="true"
+                  className={entry.role === 'user' ? 'text-[#d8cdbd]' : 'text-foreground-muted'}
                 >
-                  {entry.content}
+                  {entryMarker(entry)}
+                </span>
+                <div className="min-w-0">
+                  <div className="mb-3 flex items-center justify-between gap-3 text-xs">
+                    <span className="font-medium text-foreground-muted">{entryLabel(entry)}</span>
+                    <time className="text-foreground-passive" dateTime={entry.ts}>
+                      {new Date(entry.ts).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </time>
+                  </div>
+                  <div className="font-sans leading-7 whitespace-pre-wrap text-foreground">
+                    {entry.content}
+                  </div>
                 </div>
               </article>
             ))}
@@ -107,11 +133,14 @@ export function ThreadPanel() {
           </div>
         )}
       </div>
-      <form onSubmit={submit} className="border-t border-border p-4">
+      <form onSubmit={submit} className="border-t border-border bg-background px-7 py-4">
         {error && entries.length > 0 && (
           <p className="text-danger mx-auto mb-2 max-w-3xl text-xs">{error}</p>
         )}
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
+        <div className="mx-auto flex max-w-4xl items-start gap-3 border border-border bg-background-1 px-3 py-2 focus-within:border-foreground-passive">
+          <span className="pt-2 font-semibold text-[#d8cdbd]" aria-hidden="true">
+            ❯
+          </span>
           <Textarea
             aria-label="Message Orc"
             value={draft}
@@ -122,17 +151,17 @@ export function ThreadPanel() {
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Message Orc"
+            placeholder="Give Orc a task…"
             disabled={sending}
-            className="max-h-48 min-h-12 resize-none"
+            className="max-h-48 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 font-sans shadow-none focus-visible:ring-0"
           />
           <button
             type="submit"
             aria-label="Send message"
             disabled={sending || !draft.trim()}
-            className="bg-accent text-accent-foreground flex size-10 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
+            className="mt-1 flex h-8 shrink-0 items-center gap-1.5 border border-border px-2 text-xs text-foreground-muted hover:border-foreground-passive hover:text-foreground disabled:opacity-40"
           >
-            <Send className="size-4" />
+            run <span className="text-foreground-passive">↵</span>
           </button>
         </div>
       </form>
