@@ -1,5 +1,4 @@
 import { Markdown } from '@emdash/ui/react/components';
-import { Textarea } from '@emdash/ui/react/primitives';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
@@ -254,7 +253,7 @@ export function ThreadPanel() {
           <span className="pt-2 text-[#d8cdbd]" aria-hidden="true">
             ›
           </span>
-          <Textarea
+          <textarea
             aria-label="Message Orc"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -265,8 +264,9 @@ export function ThreadPanel() {
               }
             }}
             placeholder="Ask Orc to do anything"
-            disabled={sending}
-            className="max-h-48 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 font-mono text-[13px] leading-6 text-[#e8e4dd] shadow-none placeholder:text-[#625f5b] focus-visible:ring-0"
+            disabled={sending || !health}
+            rows={1}
+            className="max-h-48 min-h-8 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 font-mono text-[13px] leading-5 text-[#e8e4dd] outline-none placeholder:text-[#625f5b] disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
         <div className="mx-auto mt-1 flex max-w-[920px] justify-between px-1 text-[11px] text-[#625f5b]">
