@@ -1,21 +1,14 @@
 import { Textarea } from '@emdash/ui/react/primitives';
-import { ServerOff } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 
 const REFRESH_INTERVAL_MS = 2_000;
 
-function entryLabel(entry: OrchestratorEntry): string {
-  if (entry.role === 'user') return entry.surface === 'emdash' ? 'you' : `you · ${entry.surface}`;
-  if (entry.role === 'system') return 'system';
-  return 'orc';
-}
-
 function entryMarker(entry: OrchestratorEntry): string {
-  if (entry.role === 'user') return '❯';
+  if (entry.role === 'user') return '›';
   if (entry.role === 'system') return '!';
-  return '●';
+  return '•';
 }
 
 export function ThreadPanel() {
@@ -71,75 +64,84 @@ export function ThreadPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background font-mono text-foreground">
-      <div className="flex items-center justify-between border-b border-border px-6 py-3 text-xs">
-        <div className="flex items-baseline gap-3">
-          <span className="font-semibold tracking-[0.18em] text-[#d8cdbd]">ORC</span>
-          <span className="text-foreground-passive">
-            {health
-              ? `${health.provider}${health.model ? `/${health.model}` : ''} · ${health.entries} turns · ${health.memories} memories`
-              : 'harness'}
-          </span>
-        </div>
-        <span className="flex items-center gap-2 text-foreground-muted">
-          <span
-            className={`size-1.5 rounded-full ${health ? 'bg-[#a8b59a]' : 'bg-foreground-passive'}`}
-          />
-          {sending || health?.busy ? 'working' : health ? 'ready' : 'offline'}
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+    <div className="flex h-full min-h-0 flex-col bg-[#111417] font-mono text-[#e8e4dd]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 text-[13px] leading-6 sm:px-8">
         {error && entries.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-foreground-muted">
-            <ServerOff className="size-8" strokeWidth={1.5} />
-            <div>
-              <p className="font-medium text-foreground">Orc is unavailable</p>
-              <p className="mt-1 max-w-md text-xs">{error}</p>
-              <p className="mt-2 max-w-md text-xs">
-                Set EMDASH_ORCHESTRATOR_URL when Orc is not available at 127.0.0.1:8790.
-              </p>
-            </div>
+          <div className="text-[#817d77]">
+            <p>
+              <span className="text-[#d8cdbd]">!</span> unable to start Orc
+            </p>
+            <p className="pl-4">{error}</p>
+            <p className="mt-2 pl-4">
+              set EMDASH_ORCHESTRATOR_URL if Orc is not listening on 127.0.0.1:8790
+            </p>
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-4xl flex-col">
+          <div className="mx-auto w-full max-w-[920px]">
+            <div className="mb-8 text-[#a6a19a]" aria-label="Orc session information">
+              <pre
+                className="text-[#d8cdbd]"
+                aria-hidden="true"
+              >{`╭────────────────────────────────────────╮
+│  ORC                                   │
+│  persistent intelligence harness       │
+╰────────────────────────────────────────╯`}</pre>
+              <div className="mt-2 grid grid-cols-[5.5rem_minmax(0,1fr)] pl-2">
+                <span className="text-[#6f6c67]">model</span>
+                <span>
+                  {health ? `${health.provider}${health.model ? ` / ${health.model}` : ''}` : '—'}
+                </span>
+                <span className="text-[#6f6c67]">thread</span>
+                <span>
+                  {health ? `${health.entries} turns · ${health.memories} memories` : 'connecting'}
+                </span>
+              </div>
+              <p className="mt-3 pl-2 text-[#6f6c67]">
+                Type a task below. Enter sends · Shift+Enter adds a line
+              </p>
+            </div>
             {entries.map((entry) => (
               <article
                 key={entry.id}
-                className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 border-b border-border/50 py-5 last:border-b-0"
+                className={`mb-6 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 ${
+                  entry.role === 'system' ? 'text-[#817d77]' : ''
+                }`}
               >
                 <span
                   aria-hidden="true"
-                  className={entry.role === 'user' ? 'text-[#d8cdbd]' : 'text-foreground-muted'}
+                  className={entry.role === 'user' ? 'text-[#d8cdbd]' : 'text-[#88837c]'}
                 >
                   {entryMarker(entry)}
                 </span>
-                <div className="min-w-0">
-                  <div className="mb-3 flex items-center justify-between gap-3 text-xs">
-                    <span className="font-medium text-foreground-muted">{entryLabel(entry)}</span>
-                    <time className="text-foreground-passive" dateTime={entry.ts}>
-                      {new Date(entry.ts).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </time>
-                  </div>
-                  <div className="font-sans leading-7 whitespace-pre-wrap text-foreground">
-                    {entry.content}
-                  </div>
+                <div
+                  className={`min-w-0 whitespace-pre-wrap ${
+                    entry.role === 'user' ? 'font-semibold text-[#f1eee8]' : ''
+                  }`}
+                >
+                  {entry.content}
+                  {entry.role === 'user' && entry.surface !== 'emdash' && (
+                    <span className="ml-2 font-normal text-[#625f5b]">[{entry.surface}]</span>
+                  )}
                 </div>
               </article>
             ))}
+            {(sending || health?.busy) && (
+              <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
+                <span>•</span>
+                <span>Working…</span>
+              </div>
+            )}
             <div ref={endRef} />
           </div>
         )}
       </div>
-      <form onSubmit={submit} className="border-t border-border bg-background px-7 py-4">
+      <form onSubmit={submit} className="bg-[#111417] px-5 pb-4 sm:px-8">
         {error && entries.length > 0 && (
-          <p className="text-danger mx-auto mb-2 max-w-3xl text-xs">{error}</p>
+          <p className="mx-auto mb-2 max-w-[920px] text-xs text-[#c98279]">! {error}</p>
         )}
-        <div className="mx-auto flex max-w-4xl items-start gap-3 border border-border bg-background-1 px-3 py-2 focus-within:border-foreground-passive">
-          <span className="pt-2 font-semibold text-[#d8cdbd]" aria-hidden="true">
-            ❯
+        <div className="mx-auto flex max-w-[920px] items-start gap-2 border border-[#59554f] bg-[#171a1d] px-3 py-2 focus-within:border-[#d8cdbd]">
+          <span className="pt-2 text-[#d8cdbd]" aria-hidden="true">
+            ›
           </span>
           <Textarea
             aria-label="Message Orc"
@@ -151,18 +153,16 @@ export function ThreadPanel() {
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Give Orc a task…"
+            placeholder="Ask Orc to do anything"
             disabled={sending}
-            className="max-h-48 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 font-sans shadow-none focus-visible:ring-0"
+            className="max-h-48 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 font-mono text-[13px] leading-6 text-[#e8e4dd] shadow-none placeholder:text-[#625f5b] focus-visible:ring-0"
           />
-          <button
-            type="submit"
-            aria-label="Send message"
-            disabled={sending || !draft.trim()}
-            className="mt-1 flex h-8 shrink-0 items-center gap-1.5 border border-border px-2 text-xs text-foreground-muted hover:border-foreground-passive hover:text-foreground disabled:opacity-40"
-          >
-            run <span className="text-foreground-passive">↵</span>
-          </button>
+        </div>
+        <div className="mx-auto mt-1 flex max-w-[920px] justify-between px-1 text-[11px] text-[#625f5b]">
+          <span>{sending || health?.busy ? 'esc to interrupt' : '? for shortcuts'}</span>
+          <span>
+            {health ? `${health.provider}${health.model ? `/${health.model}` : ''}` : 'offline'}
+          </span>
         </div>
       </form>
     </div>
