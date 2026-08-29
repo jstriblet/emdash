@@ -54,6 +54,9 @@ function activityHeading(activity: Activity): string {
   if (activity.kind === 'file_change') {
     return `${activity.status === 'in_progress' ? 'Editing' : 'Edited'} ${activity.title.replace(/^Changed /, '')}`;
   }
+  if (activity.kind === 'web_search') {
+    return `${activity.status === 'in_progress' ? 'Searching' : 'Searched'} ${activity.title}`;
+  }
   return activity.title;
 }
 
@@ -190,14 +193,18 @@ export function ThreadPanel() {
                         {activityHeading(activity)}
                       </div>
                       {detail.lines.length > 0 && (
-                        <div className="mt-1 overflow-x-auto text-xs leading-5 text-[#706c66]">
+                        <div className="mt-1 text-xs leading-5 text-[#7d7871]">
                           {detail.hidden > 0 && (
                             <div className="pl-4">… {detail.hidden} lines hidden</div>
                           )}
                           {detail.lines.map((line, index) => (
-                            <div key={`${entry.id}:${index}`} className="flex min-w-max">
-                              <span className="w-4 shrink-0">{index === 0 ? '└' : ' '}</span>
-                              <span className="whitespace-pre">{line}</span>
+                            <div key={`${entry.id}:${index}`} className="flex min-w-0">
+                              <span className="w-4 shrink-0 text-[#5f5b56]">
+                                {index === 0 ? '└' : ' '}
+                              </span>
+                              <span className="min-w-0 break-words whitespace-pre-wrap">
+                                {line}
+                              </span>
                             </div>
                           ))}
                         </div>
