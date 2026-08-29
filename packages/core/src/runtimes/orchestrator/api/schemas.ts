@@ -25,6 +25,8 @@ export const orchestratorHealthSchema = z.object({
   memories: z.number().int().nonnegative(),
   provider: z.string(),
   model: z.string().nullable(),
+  directory: z.string().nullable().optional(),
+  sandbox: z.string().nullable().optional(),
   busy: z.boolean(),
 });
 

@@ -1,9 +1,11 @@
+import { Markdown } from '@emdash/ui/react/components';
 import { Textarea } from '@emdash/ui/react/primitives';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 
 const REFRESH_INTERVAL_MS = 2_000;
+const DISPLAY_TURNS = 4;
 
 function entryMarker(entry: OrchestratorEntry): string {
   if (entry.role === 'user') return '›';
@@ -42,6 +44,25 @@ function parseActivity(entry: OrchestratorEntry): Activity | undefined {
   }
 }
 
+function activityHeading(activity: Activity): string {
+  if (activity.kind === 'command') {
+    const command = activity.title.replace(/^\/bin\/bash -lc /, '').replace(/^"|"$/g, '');
+    const compact = command.split('\n')[0].slice(0, 82);
+    if (activity.status === 'in_progress') return `Running ${compact}`;
+    if (activity.status === 'failed') return `Command failed ${compact}`;
+    return `Ran ${compact}`;
+  }
+  if (activity.kind === 'file_change') {
+    return `${activity.status === 'in_progress' ? 'Editing' : 'Edited'} ${activity.title.replace(/^Changed /, '')}`;
+  }
+  return activity.title;
+}
+
+function activityDetail(detail: string): { hidden: number; lines: string[] } {
+  const lines = detail.trim().split('\n').filter(Boolean);
+  return { hidden: Math.max(0, lines.length - 8), lines: lines.slice(-8) };
+}
+
 export function ThreadPanel() {
   const [entries, setEntries] = useState<OrchestratorEntry[]>([]);
   const [health, setHealth] = useState<OrchestratorHealth>();
@@ -50,16 +71,30 @@ export function ThreadPanel() {
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleEntries = useMemo(() => {
+    const recentTurnIds: string[] = [];
+    for (const entry of [...entries].reverse()) {
+      if (entry.turn_id && !recentTurnIds.includes(entry.turn_id)) {
+        recentTurnIds.push(entry.turn_id);
+        if (recentTurnIds.length === DISPLAY_TURNS) break;
+      }
+    }
+    const selected = new Set(recentTurnIds);
+    const coherentEntries = recentTurnIds.length
+      ? entries.filter((entry) => entry.turn_id && selected.has(entry.turn_id))
+      : entries.slice(-12);
     const latestActivity = new Map<string, number>();
-    entries.forEach((entry) => {
+    const progressTurns = new Set<string>();
+    coherentEntries.forEach((entry) => {
       const activity = parseActivity(entry);
       if (activity) latestActivity.set(`${entry.turn_id ?? 'legacy'}:${activity.id}`, entry.id);
+      if (entry.role === 'assistant_progress' && entry.turn_id) progressTurns.add(entry.turn_id);
     });
-    return entries.filter((entry) => {
+    return coherentEntries.filter((entry) => {
       const activity = parseActivity(entry);
-      return (
-        !activity || latestActivity.get(`${entry.turn_id ?? 'legacy'}:${activity.id}`) === entry.id
-      );
+      if (activity) {
+        return latestActivity.get(`${entry.turn_id ?? 'legacy'}:${activity.id}`) === entry.id;
+      }
+      return !(entry.role === 'assistant' && entry.turn_id && progressTurns.has(entry.turn_id));
     });
   }, [entries]);
 
@@ -71,7 +106,7 @@ export function ThreadPanel() {
         client.thread({ limit: 200 }),
       ]);
       setHealth(nextHealth);
-      setEntries(thread.turns.filter((entry) => entry.role !== 'assistant_progress'));
+      setEntries(thread.turns);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
@@ -123,50 +158,53 @@ export function ThreadPanel() {
         ) : (
           <div className="mx-auto w-full max-w-[920px]">
             <div className="mb-8 text-[#a6a19a]" aria-label="Orc session information">
-              <pre
-                className="text-[#d8cdbd]"
-                aria-hidden="true"
-              >{`╭────────────────────────────────────────╮
-│  ORC                                   │
-│  persistent intelligence harness       │
-╰────────────────────────────────────────╯`}</pre>
-              <div className="mt-2 grid grid-cols-[5.5rem_minmax(0,1fr)] pl-2">
-                <span className="text-[#6f6c67]">model</span>
-                <span>
-                  {health ? `${health.provider}${health.model ? ` / ${health.model}` : ''}` : '—'}
-                </span>
-                <span className="text-[#6f6c67]">thread</span>
-                <span>
-                  {health ? `${health.entries} turns · ${health.memories} memories` : 'connecting'}
-                </span>
+              <div className="w-full max-w-[34rem] border border-[#59554f] px-4 py-3">
+                <div className="mb-3 text-base font-semibold text-[#e8e4dd]">&gt;_ ORC</div>
+                <div className="grid grid-cols-[5.5rem_minmax(0,1fr)]">
+                  <span className="text-[#6f6c67]">model:</span>
+                  <span>
+                    {health ? `${health.provider}${health.model ? ` / ${health.model}` : ''}` : '—'}
+                  </span>
+                  <span className="text-[#6f6c67]">directory:</span>
+                  <span className="truncate">{health?.directory ?? 'connecting'}</span>
+                </div>
               </div>
               <p className="mt-3 pl-2 text-[#6f6c67]">
-                Type a task below. Enter sends · Shift+Enter adds a line
+                Tip: type /help for commands and shortcuts.
               </p>
             </div>
             {visibleEntries.map((entry) => {
               const activity = parseActivity(entry);
               if (activity) {
                 const isWorking = activity.status === 'in_progress';
+                const detail = activityDetail(activity.detail);
                 return (
-                  <details
+                  <div
                     key={entry.id}
-                    className="group mb-3 pl-5 text-[#918c85]"
-                    open={isWorking}
+                    className="mb-4 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
                   >
-                    <summary className="cursor-pointer list-none select-none [&::-webkit-details-marker]:hidden">
-                      <span className={isWorking ? 'animate-pulse text-[#d8cdbd]' : ''}>
-                        {isWorking ? '◌' : activity.status === 'failed' ? '×' : '✓'}
-                      </span>{' '}
-                      <span>{activity.title}</span>
-                      <span className="ml-2 text-[#56534f]">{activity.kind.replace('_', ' ')}</span>
-                    </summary>
-                    {activity.detail && (
-                      <pre className="mt-1 max-h-64 overflow-auto border-l border-[#383633] pl-4 text-xs leading-5 whitespace-pre-wrap text-[#706c66]">
-                        {activity.detail}
-                      </pre>
-                    )}
-                  </details>
+                    <span className={isWorking ? 'animate-pulse text-[#d8cdbd]' : 'text-[#88837c]'}>
+                      •
+                    </span>
+                    <div className="min-w-0 text-[#b6b0a7]">
+                      <div className={activity.status === 'failed' ? 'text-[#c98279]' : ''}>
+                        {activityHeading(activity)}
+                      </div>
+                      {detail.lines.length > 0 && (
+                        <div className="mt-1 overflow-x-auto text-xs leading-5 text-[#706c66]">
+                          {detail.hidden > 0 && (
+                            <div className="pl-4">… {detail.hidden} lines hidden</div>
+                          )}
+                          {detail.lines.map((line, index) => (
+                            <div key={`${entry.id}:${index}`} className="flex min-w-max">
+                              <span className="w-4 shrink-0">{index === 0 ? '└' : ' '}</span>
+                              <span className="whitespace-pre">{line}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 );
               }
               return (
@@ -182,14 +220,17 @@ export function ThreadPanel() {
                   >
                     {entryMarker(entry)}
                   </span>
-                  <div
-                    className={`min-w-0 whitespace-pre-wrap ${
-                      entry.role === 'user' ? 'font-semibold text-[#f1eee8]' : ''
-                    }`}
-                  >
-                    {entry.content}
-                    {entry.role === 'user' && entry.surface !== 'emdash' && (
-                      <span className="ml-2 font-normal text-[#625f5b]">[{entry.surface}]</span>
+                  <div className="min-w-0">
+                    {entry.role === 'user' ? (
+                      <div className="font-semibold whitespace-pre-wrap text-[#f1eee8]">
+                        {entry.content}
+                      </div>
+                    ) : (
+                      <Markdown
+                        content={entry.content}
+                        variant="compact"
+                        className="max-w-none text-[#d2cdc5] [&_pre]:border [&_pre]:border-[#383633] [&_pre]:bg-[#0d0f11]"
+                      />
                     )}
                   </div>
                 </article>
@@ -209,7 +250,7 @@ export function ThreadPanel() {
         {error && entries.length > 0 && (
           <p className="mx-auto mb-2 max-w-[920px] text-xs text-[#c98279]">! {error}</p>
         )}
-        <div className="mx-auto flex max-w-[920px] items-start gap-2 border border-[#59554f] bg-[#171a1d] px-3 py-2 focus-within:border-[#d8cdbd]">
+        <div className="mx-auto flex max-w-[920px] items-start gap-2 border-t border-[#383633] px-1 pt-2">
           <span className="pt-2 text-[#d8cdbd]" aria-hidden="true">
             ›
           </span>
