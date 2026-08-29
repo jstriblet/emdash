@@ -53,11 +53,13 @@ export function ThreadPanel() {
     const latestActivity = new Map<string, number>();
     entries.forEach((entry) => {
       const activity = parseActivity(entry);
-      if (activity) latestActivity.set(activity.id, entry.id);
+      if (activity) latestActivity.set(`${entry.turn_id ?? 'legacy'}:${activity.id}`, entry.id);
     });
     return entries.filter((entry) => {
       const activity = parseActivity(entry);
-      return !activity || latestActivity.get(activity.id) === entry.id;
+      return (
+        !activity || latestActivity.get(`${entry.turn_id ?? 'legacy'}:${activity.id}`) === entry.id
+      );
     });
   }, [entries]);
 

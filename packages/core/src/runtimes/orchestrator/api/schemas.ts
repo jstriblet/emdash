@@ -16,6 +16,7 @@ export const orchestratorEntrySchema = z.object({
   surface: orchestratorSurfaceSchema,
   role: orchestratorRoleSchema,
   content: z.string(),
+  turn_id: z.string().nullable().optional(),
 });
 
 export const orchestratorHealthSchema = z.object({
