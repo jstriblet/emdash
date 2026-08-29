@@ -88,10 +88,19 @@ export class OrchestratorService {
     }
 
     const repositoryRoot = resolve(process.cwd(), '../..');
-    const artifact = resolve(repositoryRoot, 'apps/emdash-desktop/release/emdash-arm64.dmg');
+    const artifact = resolve(repositoryRoot, 'apps/emdash-desktop/release/emdash-orc-arm64.dmg');
     const build = spawn(
       'pnpm',
-      ['--dir', 'apps/emdash-desktop', 'run', 'package:mac', '--', '--arm64', '--publish', 'never'],
+      [
+        '--dir',
+        'apps/emdash-desktop',
+        'run',
+        'package:mac:orc',
+        '--',
+        '--arm64',
+        '--publish',
+        'never',
+      ],
       { cwd: repositoryRoot, env: process.env, stdio: 'ignore' }
     );
     this.macBuild = build;
