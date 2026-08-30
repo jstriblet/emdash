@@ -1,7 +1,7 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
-import type { OrchestratorEntry, OrchestratorHealth, OrchestratorWorkContract } from '../api';
+import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 
 const REFRESH_INTERVAL_MS = 2_000;
@@ -80,13 +80,6 @@ export function ThreadPanel() {
   const [updateNotice, setUpdateNotice] = useState<string>();
   const [installingMacApp, setInstallingMacApp] = useState(false);
   const [machines, setMachines] = useState<OrcMachine[]>([]);
-  const [workContracts, setWorkContracts] = useState<OrchestratorWorkContract[]>([]);
-  const [showContracts, setShowContracts] = useState(false);
-  const [showContractForm, setShowContractForm] = useState(false);
-  const [contractGoal, setContractGoal] = useState('');
-  const [contractProcedure, setContractProcedure] = useState('');
-  const [contractExpected, setContractExpected] = useState('');
-  const [changingContract, setChangingContract] = useState(false);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const shouldFollowThreadRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
@@ -121,14 +114,12 @@ export function ThreadPanel() {
   const refresh = useCallback(async () => {
     try {
       const client = await getOrchestratorClient();
-      const [nextHealth, thread, contracts] = await Promise.all([
+      const [nextHealth, thread] = await Promise.all([
         client.health(),
         client.thread({ limit: 200 }),
-        client.workContracts(undefined),
       ]);
       setHealth(nextHealth);
       setEntries(thread.turns);
-      setWorkContracts(contracts.workContracts);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
@@ -212,128 +203,6 @@ export function ThreadPanel() {
     }
   }
 
-  async function createWorkContract(event: FormEvent) {
-    event.preventDefault();
-    const goal = contractGoal.trim();
-    const procedure = contractProcedure.trim();
-    const expected = contractExpected.trim();
-    if (!goal || !procedure || !expected || changingContract) return;
-    setChangingContract(true);
-    setError(undefined);
-    try {
-      const client = await getOrchestratorClient();
-      await client.createWorkContract({
-        version: '1',
-        goal,
-        non_goals: [],
-        constraints: [],
-        deliverables: [{ id: 'D1', description: goal }],
-        acceptance_checks: [
-          {
-            id: 'A1',
-            description: 'Verify the desired result',
-            procedure,
-            expected,
-            required: true,
-          },
-        ],
-        definition_of_done: `D1 is delivered and A1 confirms: ${expected}`,
-        escalation_conditions: [],
-      });
-      setContractGoal('');
-      setContractProcedure('');
-      setContractExpected('');
-      setShowContractForm(false);
-      setShowContracts(true);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to create work contract');
-    } finally {
-      setChangingContract(false);
-    }
-  }
-
-  async function recordContractEvidence(contract: OrchestratorWorkContract) {
-    const check = contract.checks.find(({ status }) => status !== 'passed' && status !== 'waived');
-    const definition = contract.contract.acceptance_checks.find(({ id }) => id === check?.check_id);
-    if (!check || !definition || changingContract) return;
-    setChangingContract(true);
-    try {
-      await (await getOrchestratorClient()).updateWorkContract({
-        contractId: contract.task_id,
-        update: {
-          version: '1',
-          event_id: crypto.randomUUID(),
-          contract_revision: contract.revision,
-          sender: 'emdash-user',
-          recipient: 'orc',
-          message_type: 'verification',
-          state: 'verifying',
-          summary: `${check.check_id} manually verified in Emdash`,
-          affected_ids: [check.check_id],
-          evidence: [],
-          blockers: [],
-          assumptions: [],
-          risks: [],
-          authority_needed: [],
-          check_results: [
-            {
-              check_id: check.check_id,
-              status: 'passed',
-              evidence: [
-                {
-                  kind: 'test',
-                  reference: definition.procedure,
-                  summary: `Manually confirmed: ${definition.expected}`,
-                },
-              ],
-            },
-          ],
-        },
-      });
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to record evidence');
-    } finally {
-      setChangingContract(false);
-    }
-  }
-
-  async function completeWorkContract(contract: OrchestratorWorkContract) {
-    if (changingContract) return;
-    setChangingContract(true);
-    try {
-      await (await getOrchestratorClient()).updateWorkContract({
-        contractId: contract.task_id,
-        update: {
-          version: '1',
-          event_id: crypto.randomUUID(),
-          contract_revision: contract.revision,
-          sender: 'orc',
-          recipient: 'emdash-user',
-          message_type: 'completion',
-          state: 'completed',
-          summary: 'All required Work Contract checks have evidence',
-          affected_ids: [
-            ...contract.contract.deliverables.map(({ id }) => id),
-            ...contract.contract.acceptance_checks.map(({ id }) => id),
-          ],
-          evidence: [],
-          blockers: [],
-          assumptions: [],
-          risks: [],
-          authority_needed: [],
-          check_results: [],
-        },
-      });
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Completion was rejected');
-    } finally {
-      setChangingContract(false);
-    }
-  }
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#111417] font-mono text-[#e8e4dd]">
       <div
@@ -388,116 +257,6 @@ export function ThreadPanel() {
                 Tip: type /help for commands and shortcuts.
               </p>
             </div>
-            <section
-              className="sticky top-0 z-10 mb-8 border-y border-[#383633] bg-[#111417]/95 py-3 backdrop-blur"
-              aria-label="Work Contracts"
-            >
-              <div
-                className={
-                  showContracts
-                    ? 'mb-2 flex items-center justify-between'
-                    : 'flex items-center justify-between'
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowContracts((visible) => !visible)}
-                  className="flex items-center gap-2 text-[#8f8a83] hover:text-[#e8e4dd]"
-                  aria-expanded={showContracts}
-                >
-                  <span aria-hidden="true">{showContracts ? '▾' : '▸'}</span>
-                  <span>work contracts</span>
-                  <span className="text-[#625f5b]">{workContracts.length}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowContracts(true);
-                    setShowContractForm((visible) => !visible);
-                  }}
-                  className="text-[#b6b0a7] hover:text-[#e8e4dd]"
-                >
-                  {showContractForm ? 'cancel' : '+ new'}
-                </button>
-              </div>
-              {showContracts && showContractForm && (
-                <form onSubmit={createWorkContract} className="mb-4 grid gap-2 border-l border-[#59554f] pl-3">
-                  <input
-                    aria-label="Desired outcome"
-                    value={contractGoal}
-                    onChange={(event) => setContractGoal(event.target.value)}
-                    placeholder="desired outcome"
-                    className="bg-transparent text-[#e8e4dd] outline-none placeholder:text-[#625f5b]"
-                  />
-                  <input
-                    aria-label="Verification procedure"
-                    value={contractProcedure}
-                    onChange={(event) => setContractProcedure(event.target.value)}
-                    placeholder="test command or inspection procedure"
-                    className="bg-transparent text-[#e8e4dd] outline-none placeholder:text-[#625f5b]"
-                  />
-                  <input
-                    aria-label="Expected result"
-                    value={contractExpected}
-                    onChange={(event) => setContractExpected(event.target.value)}
-                    placeholder="expected result"
-                    className="bg-transparent text-[#e8e4dd] outline-none placeholder:text-[#625f5b]"
-                  />
-                  <button
-                    type="submit"
-                    disabled={changingContract}
-                    className="w-fit text-[#d8cdbd] hover:text-white disabled:opacity-50"
-                  >
-                    create contract
-                  </button>
-                </form>
-              )}
-              {showContracts && workContracts.length === 0 ? (
-                <p className="text-[#625f5b]">no contracts yet</p>
-              ) : showContracts ? (
-                <div className="grid gap-3">
-                  {workContracts.slice(-5).reverse().map((contract) => {
-                    const incomplete = contract.checks.filter(
-                      ({ status }) => status !== 'passed' && status !== 'waived'
-                    );
-                    return (
-                      <div key={contract.task_id} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2">
-                        <span className="text-[#88837c]">◇</span>
-                        <div>
-                          <div className="text-[#d2cdc5]">{contract.contract.goal}</div>
-                          <div className="text-xs text-[#706b64]">
-                            {contract.state} · {contract.checks.length - incomplete.length}/
-                            {contract.checks.length} checks
-                          </div>
-                          {contract.state !== 'completed' && (
-                            <div className="mt-1 flex gap-3 text-xs">
-                              {incomplete.length > 0 && (
-                                <button
-                                  type="button"
-                                  disabled={changingContract}
-                                  onClick={() => void recordContractEvidence(contract)}
-                                  className="text-[#b6b0a7] hover:text-[#e8e4dd] disabled:opacity-50"
-                                >
-                                  record {incomplete[0].check_id} evidence
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                disabled={changingContract}
-                                onClick={() => void completeWorkContract(contract)}
-                                className="text-[#b6b0a7] hover:text-[#e8e4dd] disabled:opacity-50"
-                              >
-                                complete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </section>
             {visibleEntries.map((entry) => {
               const activity = parseActivity(entry);
               if (activity) {
