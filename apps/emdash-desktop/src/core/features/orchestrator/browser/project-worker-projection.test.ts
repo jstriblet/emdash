@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isEmptyOrOnlyTerminalTask,
   isOnlyTaskInProject,
   selectProjectionMachineId,
   shouldAdoptHostConversation,
@@ -63,5 +64,15 @@ describe('isOnlyTaskInProject', () => {
 
   it('preserves a project containing another task', () => {
     expect(isOnlyTaskInProject(['orc-task', 'other-task'], 'orc-task')).toBe(false);
+  });
+});
+
+describe('isEmptyOrOnlyTerminalTask', () => {
+  it('cleans an empty project whose Orc task was already removed', () => {
+    expect(isEmptyOrOnlyTerminalTask([], 'orc-task')).toBe(true);
+  });
+
+  it('does not clean a project when another task remains', () => {
+    expect(isEmptyOrOnlyTerminalTask(['other-task'], 'orc-task')).toBe(false);
   });
 });

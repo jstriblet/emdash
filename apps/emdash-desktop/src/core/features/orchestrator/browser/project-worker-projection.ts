@@ -15,6 +15,7 @@ import { getOrchestratorClient } from '../api/browser/client';
 
 const projectionAttempts = new Set<string>();
 const projectCreationAttempts = new Set<string>();
+const projectDeletionAttempts = new Set<string>();
 const linkedConversations = new Set<string>();
 const openedConversations = new Set<string>();
 const reportedProjectionStages = new Set<string>();
@@ -157,6 +158,11 @@ export function isOnlyTaskInProject(taskIds: Iterable<string>, taskId: string): 
   return ids.length === 1 && ids[0] === taskId;
 }
 
+export function isEmptyOrOnlyTerminalTask(taskIds: Iterable<string>, taskId: string): boolean {
+  const ids = [...taskIds];
+  return ids.length === 0 || (ids.length === 1 && ids[0] === taskId);
+}
+
 async function closeTerminalProjection(contract: OrchestratorWorkContract): Promise<void> {
   const execution = contract.executions.at(-1);
   if (!execution || !isTerminal(contract)) return;
@@ -166,13 +172,30 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   );
   if (!project) return;
   const taskManager = getTaskManagerStore(project.id);
-  const task = taskManager?.tasks.get(contract.task_id);
-  if (!task || !taskManager) return;
+  if (!taskManager) return;
+  const task = taskManager.tasks.get(contract.task_id);
   const firstObservedAt = terminalProjectionFirstObservedAt.get(contract.task_id) ?? Date.now();
   terminalProjectionFirstObservedAt.set(contract.task_id, firstObservedAt);
   if (Date.now() - firstObservedAt < TERMINAL_PROJECTION_GRACE_MS) return;
   terminalProjectionFirstObservedAt.delete(contract.task_id);
-  const shouldDeleteProject = isOnlyTaskInProject(taskManager.tasks.keys(), contract.task_id);
+  if (!task) {
+    if (
+      isEmptyOrOnlyTerminalTask(taskManager.tasks.keys(), contract.task_id) &&
+      !projectDeletionAttempts.has(project.id)
+    ) {
+      projectDeletionAttempts.add(project.id);
+      try {
+        await projects.deleteProject(project.id);
+      } finally {
+        projectDeletionAttempts.delete(project.id);
+      }
+    }
+    return;
+  }
+  const shouldDeleteProject = isEmptyOrOnlyTerminalTask(
+    taskManager.tasks.keys(),
+    contract.task_id
+  );
   if (task.state === 'unregistered') {
     runInAction(() => taskManager.tasks.delete(contract.task_id));
   } else {
@@ -181,7 +204,18 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
       deleteBranch: false,
     });
   }
-  if (shouldDeleteProject && taskManager.tasks.size === 0) await projects.deleteProject(project.id);
+  if (
+    shouldDeleteProject &&
+    taskManager.tasks.size === 0 &&
+    !projectDeletionAttempts.has(project.id)
+  ) {
+    projectDeletionAttempts.add(project.id);
+    try {
+      await projects.deleteProject(project.id);
+    } finally {
+      projectDeletionAttempts.delete(project.id);
+    }
+  }
 }
 
 /**
