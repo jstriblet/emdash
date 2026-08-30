@@ -64,9 +64,18 @@ export const orchestratorWorkerInputActionSchema = z.object({
   input: z.string().min(1).max(1_000),
 });
 
+export const orchestratorWorkerRestartActionSchema = z.object({
+  kind: z.literal('restart_worker'),
+  action_id: z.string().min(1),
+  execution_id: z.string().min(1),
+  emdash_task_id: z.string().min(1),
+  conversation_id: z.string().min(1),
+});
+
 export const orchestratorPendingActionSchema = z.discriminatedUnion('kind', [
   orchestratorWorkSessionActionSchema,
   orchestratorWorkerInputActionSchema,
+  orchestratorWorkerRestartActionSchema,
 ]);
 
 export const orchestratorActionResolutionSchema = z.object({

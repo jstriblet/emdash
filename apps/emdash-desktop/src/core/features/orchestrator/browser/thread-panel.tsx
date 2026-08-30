@@ -208,6 +208,17 @@ export function ThreadPanel() {
       setError(undefined);
       try {
         const client = await getOrchestratorClient();
+        if (action.kind === 'restart_worker') {
+          const manager = getConversationsForTask(action.emdash_task_id);
+          const session = manager?.sessions.get(action.conversation_id);
+          if (!manager || !session) throw new Error('Worker conversation is not available');
+          await manager.killSession(action.conversation_id);
+          session.dispose();
+          await session.connect();
+          await client.completeAction({ actionId: action.action_id });
+          await refresh();
+          return;
+        }
         if (action.kind === 'send_worker_input') {
           const conversationsClient = await getConversationsClient();
           await conversationsClient.tui.sendInput({
