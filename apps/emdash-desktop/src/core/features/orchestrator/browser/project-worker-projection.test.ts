@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activeProjectIdsForContracts,
   hasOnlyDisposableProjectTasks,
   isEmptyOrOnlyTerminalTask,
   isOnlyTaskInProject,
@@ -104,5 +105,26 @@ describe('hasOnlyDisposableProjectTasks', () => {
         'orc-task'
       )
     ).toBe(false);
+  });
+});
+
+describe('active project cleanup protection', () => {
+  it('treats a project with a nonterminal contract as active before UI projection', () => {
+    const contracts = [
+      { state: 'completed', executions: [{ state: 'completed', project_id: '/repo' }] },
+      { state: 'working', executions: [{ state: 'running', project_id: '/repo' }] },
+    ] as const;
+    const activeProjectIds = activeProjectIdsForContracts(contracts);
+
+    expect(activeProjectIds.has('/repo')).toBe(true);
+  });
+
+  it('allows cleanup once every contract for the project is terminal', () => {
+    const activeProjectIds = activeProjectIdsForContracts([
+      { state: 'completed', executions: [{ state: 'completed', project_id: '/repo' }] },
+      { state: 'failed', executions: [{ state: 'failed', project_id: '/repo' }] },
+    ] as const);
+
+    expect(activeProjectIds.has('/repo')).toBe(false);
   });
 });

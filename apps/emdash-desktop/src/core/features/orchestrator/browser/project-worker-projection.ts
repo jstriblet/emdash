@@ -143,13 +143,32 @@ function taskName(contract: OrchestratorWorkContract): string {
   return goal.length <= 80 ? goal : `${goal.slice(0, 77)}...`;
 }
 
-function isTerminal(contract: OrchestratorWorkContract): boolean {
+type ContractLifecycle = {
+  state: OrchestratorWorkContract['state'];
+  executions: readonly Pick<
+    OrchestratorWorkContract['executions'][number],
+    'project_id' | 'state'
+  >[];
+};
+
+function isTerminal(contract: ContractLifecycle): boolean {
   const execution = contract.executions.at(-1);
   return (
     contract.state === 'completed' ||
     contract.state === 'failed' ||
     execution?.state === 'completed' ||
     execution?.state === 'failed'
+  );
+}
+
+export function activeProjectIdsForContracts(
+  contracts: readonly ContractLifecycle[]
+): ReadonlySet<string> {
+  return new Set(
+    contracts.flatMap((contract) => {
+      const execution = contract.executions.at(-1);
+      return execution && !isTerminal(contract) ? [execution.project_id] : [];
+    })
   );
 }
 
@@ -174,7 +193,10 @@ export function hasOnlyDisposableProjectTasks(
   );
 }
 
-async function closeTerminalProjection(contract: OrchestratorWorkContract): Promise<void> {
+async function closeTerminalProjection(
+  contract: OrchestratorWorkContract,
+  activeProjectIds: ReadonlySet<string>
+): Promise<void> {
   const execution = contract.executions.at(-1);
   if (!execution || !isTerminal(contract)) return;
   const projects = getProjectManagerStore();
@@ -195,6 +217,7 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   terminalProjectionFirstObservedAt.delete(contract.task_id);
   if (!task) {
     if (
+      !activeProjectIds.has(execution.project_id) &&
       hasOnlyDisposableProjectTasks(taskManager.tasks.values(), contract.task_id) &&
       !projectDeletionAttempts.has(project.id)
     ) {
@@ -221,6 +244,7 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   }
   if (
     shouldDeleteProject &&
+    !activeProjectIds.has(execution.project_id) &&
     taskManager.tasks.size === 0 &&
     !projectDeletionAttempts.has(project.id)
   ) {
@@ -243,14 +267,14 @@ export async function projectOrcWorkersIntoTasks(
 ): Promise<void> {
   const projects = getProjectManagerStore();
   await projects.load();
+  const activeProjectIds = activeProjectIdsForContracts(contracts);
 
   await Promise.all(
     contracts.map(async (contract) => {
       const execution = contract.executions.at(-1);
-      await closeTerminalProjection(contract);
-      // Completed workers have already been verified and archived on the host. Their
-      // workspace records may no longer exist, so replaying them into a fresh desktop
-      // would create a task that can never resolve its selected workspace.
+      await closeTerminalProjection(contract, activeProjectIds);
+      // Terminal contracts leave the desktop projection. Their host-owned worker remains
+      // retained until Orc explicitly archives it after dependency and handoff checks.
       if (!execution?.worktree_path || isTerminal(contract)) {
         return;
       }
