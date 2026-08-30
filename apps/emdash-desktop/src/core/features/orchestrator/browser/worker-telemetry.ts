@@ -25,3 +25,24 @@ export function selectWorkerConversation(
     return (right.lastInteractedAt ?? '').localeCompare(left.lastInteractedAt ?? '');
   })[0];
 }
+
+type TerminalBuffer = {
+  length: number;
+  getLine(index: number): { translateToString(trimRight?: boolean): string } | undefined;
+};
+
+export function terminalPromptExcerpt(
+  buffer: TerminalBuffer | undefined,
+  lineLimit = 16
+): string | undefined {
+  if (!buffer) return undefined;
+  const lines: string[] = [];
+  const firstLine = Math.max(0, buffer.length - lineLimit);
+  for (let index = firstLine; index < buffer.length; index++) {
+    const line = buffer.getLine(index)?.translateToString(true).trimEnd();
+    if (line) lines.push(line);
+  }
+  const excerpt = redactSecrets(lines.join('\n')).slice(-4_000).trim();
+  return excerpt || undefined;
+}
+import { redactSecrets } from '@emdash/shared/logger';

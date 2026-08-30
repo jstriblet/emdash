@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectWorkerConversation } from './worker-telemetry';
+import { selectWorkerConversation, terminalPromptExcerpt } from './worker-telemetry';
 
 describe('selectWorkerConversation', () => {
   it('surfaces an awaiting-input worker ahead of an idle conversation', () => {
@@ -19,5 +19,23 @@ describe('selectWorkerConversation', () => {
     ]);
 
     expect(selected?.id).toBe('prompt');
+  });
+});
+
+describe('terminalPromptExcerpt', () => {
+  it('returns a redacted tail containing the interactive prompt', () => {
+    const lines = [
+      'earlier output',
+      'Do you trust the authors of this folder?',
+      'token: ghp_secret',
+    ];
+    const excerpt = terminalPromptExcerpt({
+      length: lines.length,
+      getLine: (index) => ({ translateToString: () => lines[index] ?? '' }),
+    });
+
+    expect(excerpt).toContain('Do you trust the authors of this folder?');
+    expect(excerpt).toContain('[REDACTED]');
+    expect(excerpt).not.toContain('ghp_secret');
   });
 });

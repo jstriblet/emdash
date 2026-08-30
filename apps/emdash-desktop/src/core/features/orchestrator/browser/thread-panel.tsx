@@ -1,6 +1,7 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import type { OrchestratorEntry, OrchestratorHealth, OrchestratorWorkSessionAction } from '../api';
@@ -11,7 +12,7 @@ import {
   type OrchestratedWorkStage,
 } from './orchestrated-work-request';
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
-import { selectWorkerConversation } from './worker-telemetry';
+import { selectWorkerConversation, terminalPromptExcerpt } from './worker-telemetry';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
@@ -245,6 +246,15 @@ export function ThreadPanel() {
             });
             if (cancelled) return;
             const conversation = selectWorkerConversation(conversations);
+            const conversationManager = getConversationsForTask(execution.emdash_task_id);
+            const liveConversation = conversation
+              ? conversationManager?.conversations.get(conversation.id)
+              : undefined;
+            const session = conversation
+              ? conversationManager?.sessions.get(conversation.id)
+              : undefined;
+            if (session && !session.pty) await session.connect();
+            const promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
             await client.reportWorkerTelemetry({
               executionId: execution.execution_id,
               emdashTaskId: execution.emdash_task_id,
@@ -252,7 +262,9 @@ export function ThreadPanel() {
               conversationId: conversation?.id,
               sessionId: conversation?.sessionId,
               provider: conversation?.providerId ?? execution.agent,
-              status: conversation?.agentStatus ?? 'idle',
+              status: liveConversation?.status ?? conversation?.agentStatus ?? 'idle',
+              notificationType: liveConversation?.lastNotificationType,
+              promptExcerpt,
               observedAt: new Date().toISOString(),
             });
           })

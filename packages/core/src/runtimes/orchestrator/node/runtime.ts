@@ -105,6 +105,8 @@ export class OrchestratorRuntime {
           session_id: input.sessionId,
           provider: input.provider,
           status: input.status,
+          notification_type: input.notificationType,
+          prompt_excerpt: input.promptExcerpt,
           observed_at: input.observedAt,
         }),
       },

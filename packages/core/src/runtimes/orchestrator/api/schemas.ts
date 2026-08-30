@@ -78,6 +78,8 @@ export const orchestratorWorkerTelemetryInputSchema = z.object({
   sessionId: z.string().nullable().optional(),
   provider: z.string().nullable().optional(),
   status: z.string().min(1),
+  notificationType: z.string().nullable().optional(),
+  promptExcerpt: z.string().max(4_000).nullable().optional(),
   observedAt: z.string().min(1),
 });
 export const orchestratorWorkerTelemetryResultSchema = z.object({ recorded: z.boolean() });
