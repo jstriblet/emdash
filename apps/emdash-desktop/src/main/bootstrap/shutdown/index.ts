@@ -11,6 +11,8 @@ let sessionSummarySource:
   | { runtimes: RuntimeBroker; attachedHosts: () => readonly HostRef[] }
   | undefined;
 
+let allowUpdaterQuit = false;
+
 const shutdownCoordinator = createShutdownCoordinator({
   emit: (event) => desktopHostEvents.emit(undefined, event),
   getActiveSessionSummary: () => {
@@ -24,7 +26,17 @@ const shutdownCoordinator = createShutdownCoordinator({
   },
   isInstallRequested: () => updateService.isInstallRequested,
   runCleanup: runQuitCleanup,
-  exit: (code) => app.exit(code),
+  exit: (code) => {
+    if (updateService.isInstallRequested) {
+      // electron-updater applies the downloaded package from its quit lifecycle.
+      // Let the coordinated cleanup finish first, then allow that lifecycle to
+      // complete instead of bypassing it with app.exit().
+      allowUpdaterQuit = true;
+      app.quit();
+      return;
+    }
+    app.exit(code);
+  },
 });
 
 let registered = false;
@@ -40,6 +52,7 @@ export function registerQuitHandler(): void {
   if (registered) return;
   registered = true;
   app.on('before-quit', (event) => {
+    if (allowUpdaterQuit) return;
     event.preventDefault();
     void shutdownCoordinator.handleQuitRequested();
   });
