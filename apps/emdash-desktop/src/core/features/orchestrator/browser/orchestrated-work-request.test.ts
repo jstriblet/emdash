@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  findSshConfigHost,
   parseOrchestratedWorkRequest,
   projectPathCandidates,
   runStage,
+  sshConfigHostToConnection,
 } from './orchestrated-work-request';
 
 describe('parseOrchestratedWorkRequest', () => {
@@ -83,5 +85,39 @@ describe('runStage', () => {
     await expect(
       runStage('Loading the project', Promise.reject(new Error('runtime unavailable')))
     ).rejects.toThrow('Loading the project failed: runtime unavailable');
+  });
+});
+
+describe('SSH config host discovery', () => {
+  it('matches a requested machine name to a case-insensitive SSH alias', () => {
+    expect(
+      findSshConfigHost(
+        [
+          { host: '*', forwardAgent: true },
+          { host: 'thinkcenter', hostname: '192.168.1.10', user: 'striblet' },
+        ],
+        'ThinkCenter'
+      )
+    ).toMatchObject({ host: 'thinkcenter' });
+  });
+
+  it('creates an alias-backed Emdash machine without copying SSH secrets', () => {
+    expect(
+      sshConfigHostToConnection({
+        host: 'thinkcenter',
+        hostname: '192.168.1.10',
+        user: 'striblet',
+        port: 2222,
+        identityFile: '~/.ssh/id_ed25519',
+      })
+    ).toEqual({
+      name: 'thinkcenter',
+      host: '192.168.1.10',
+      port: 2222,
+      username: 'striblet',
+      sshConfigAlias: 'thinkcenter',
+      authType: 'key',
+      useAgent: false,
+    });
   });
 });

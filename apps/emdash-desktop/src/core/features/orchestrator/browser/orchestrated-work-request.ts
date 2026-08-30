@@ -5,6 +5,7 @@ import { getGitRepositoryStore } from '@core/features/source-control/api/browser
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import type { NavigateFnTyped } from '@core/primitives/navigation/browser/navigation-hooks';
+import type { SshConfigHost } from '@core/primitives/ssh/api';
 import { getOrchestratorClient } from '../api/browser/client';
 
 export type OrchestratedWorkRequest = {
@@ -227,9 +228,54 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
     (candidate) =>
       candidate.name.toLowerCase() === normalized || candidate.host.toLowerCase() === normalized
   );
-  if (!connection) throw new Error(`Orc could not find a configured machine named “${hostName}”`);
-  await machines.connect(connection.id);
-  return { type: 'ssh', connectionId: connection.id };
+  if (connection) {
+    await machines.connect(connection.id);
+    return { type: 'ssh', connectionId: connection.id };
+  }
+
+  const sshConfigHost = findSshConfigHost(await machines.getSshConfigHosts(), hostName);
+  if (!sshConfigHost) {
+    throw new Error(`Orc could not find “${hostName}” in Emdash Machines or this Mac’s SSH config`);
+  }
+  const saved = await machines.saveConnection(sshConfigHostToConnection(sshConfigHost));
+  await machines.connect(saved.id);
+  return { type: 'ssh', connectionId: saved.id };
+}
+
+export function findSshConfigHost(
+  hosts: SshConfigHost[],
+  requestedName: string
+): SshConfigHost | undefined {
+  const requested = normalizeHostName(requestedName);
+  const concreteHosts = hosts.filter((host) => !/[*!?]/.test(host.host));
+  return concreteHosts.find(
+    (host) =>
+      normalizeHostName(host.host) === requested ||
+      normalizeHostName(host.hostname ?? '') === requested
+  );
+}
+
+export function sshConfigHostToConnection(host: SshConfigHost) {
+  return {
+    name: host.host,
+    host: host.hostname || host.host,
+    port: host.port ?? 22,
+    username: host.user || host.host,
+    sshConfigAlias: host.host,
+    authType: host.identityAgent
+      ? ('agent' as const)
+      : host.identityFile
+        ? ('key' as const)
+        : ('agent' as const),
+    useAgent: Boolean(host.identityAgent || !host.identityFile),
+  };
+}
+
+function normalizeHostName(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
 
 async function discoverProjectPath(
