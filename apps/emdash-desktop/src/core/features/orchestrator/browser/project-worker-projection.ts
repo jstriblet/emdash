@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { runInAction } from 'mobx';
 import type { OrchestratorWorkContract } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
@@ -64,6 +65,30 @@ function taskName(contract: OrchestratorWorkContract): string {
   return goal.length <= 80 ? goal : `${goal.slice(0, 77)}...`;
 }
 
+function isTerminal(contract: OrchestratorWorkContract): boolean {
+  const execution = contract.executions.at(-1);
+  return (
+    contract.state === 'completed' ||
+    contract.state === 'failed' ||
+    execution?.state === 'completed' ||
+    execution?.state === 'failed'
+  );
+}
+
+function removeFailedTransientProjection(contract: OrchestratorWorkContract): void {
+  const execution = contract.executions.at(-1);
+  if (!execution || !isTerminal(contract)) return;
+  const projects = getProjectManagerStore();
+  const project = [...projects.projects.values()].find(
+    (candidate) => candidate.data?.type === 'ssh' && candidate.data.path === execution.project_id
+  );
+  if (!project) return;
+  const taskManager = getTaskManagerStore(project.id);
+  const task = taskManager?.tasks.get(contract.task_id);
+  if (task?.state !== 'unregistered') return;
+  runInAction(() => taskManager?.tasks.delete(contract.task_id));
+}
+
 /**
  * Projects a host-owned Orc execution into the desktop's normal Project → Task model.
  * The task merely adopts the already-created host workspace and conversation; it never
@@ -77,15 +102,13 @@ export async function projectOrcWorkersIntoTasks(
 
   for (const contract of contracts) {
     const execution = contract.executions.at(-1);
+    removeFailedTransientProjection(contract);
     // Completed workers have already been verified and archived on the host. Their
     // workspace records may no longer exist, so replaying them into a fresh desktop
     // would create a task that can never resolve its selected workspace.
     if (
       !execution?.worktree_path ||
-      contract.state === 'completed' ||
-      contract.state === 'failed' ||
-      execution.state === 'completed' ||
-      execution.state === 'failed'
+      isTerminal(contract)
     ) {
       continue;
     }
@@ -97,9 +120,11 @@ export async function projectOrcWorkersIntoTasks(
     if (!taskManager) continue;
 
     projectionAttempts.add(contract.task_id);
+    let createdHere = false;
     try {
       let task = taskManager.tasks.get(contract.task_id);
       if (!task) {
+        createdHere = true;
         await taskManager.createTask({
           id: contract.task_id,
           projectId: project.id,
@@ -134,6 +159,9 @@ export async function projectOrcWorkersIntoTasks(
         linkedConversations.add(execution.session_id);
       }
     } catch (error) {
+      if (createdHere && taskManager.tasks.get(contract.task_id)?.state === 'unregistered') {
+        runInAction(() => taskManager.tasks.delete(contract.task_id));
+      }
       log.warn('Unable to project Orc worker into the project rail yet', {
         taskId: contract.task_id,
         projectPath: execution.project_id,
