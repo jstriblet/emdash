@@ -89,6 +89,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ surface: 'terminal', text: message }),
+          signal: AbortSignal.timeout(120_000),
         });
       })
       .catch(() => undefined);
@@ -251,6 +252,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ surface: 'terminal', text: message }),
+              signal: AbortSignal.timeout(120_000),
             });
           })
           .catch(() => undefined);
