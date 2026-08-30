@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { parseOrchestratedWorkRequest, projectPathCandidates } from './orchestrated-work-request';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  parseOrchestratedWorkRequest,
+  projectPathCandidates,
+  runStage,
+} from './orchestrated-work-request';
 
 describe('parseOrchestratedWorkRequest', () => {
   it('parses the documented conversational trigger', () => {
@@ -49,5 +53,35 @@ describe('parseOrchestratedWorkRequest', () => {
       goal: 'add a README note',
       agent: 'codex',
     });
+  });
+});
+
+describe('runStage', () => {
+  it('reports the active stage and returns its result', async () => {
+    const report = vi.fn();
+
+    await expect(
+      runStage('Locating the repository', Promise.resolve('/repo'), report)
+    ).resolves.toBe('/repo');
+    expect(report).toHaveBeenCalledWith('Locating the repository');
+  });
+
+  it('identifies a stage that times out', async () => {
+    vi.useFakeTimers();
+    const pending = new Promise<never>(() => {});
+    const result = runStage('Connecting to the project host', pending, undefined, 1_000);
+    const expectation = expect(result).rejects.toThrow(
+      'Connecting to the project host timed out after 1 seconds'
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expectation;
+    vi.useRealTimers();
+  });
+
+  it('adds the stage to an operation error', async () => {
+    await expect(
+      runStage('Loading the project', Promise.reject(new Error('runtime unavailable')))
+    ).rejects.toThrow('Loading the project failed: runtime unavailable');
   });
 });

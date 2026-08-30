@@ -7,6 +7,7 @@ import { getOrchestratorClient } from '../api/browser/client';
 import {
   createOrchestratedWorkSession,
   parseOrchestratedWorkRequest,
+  type OrchestratedWorkStage,
 } from './orchestrated-work-request';
 
 const REFRESH_INTERVAL_MS = 2_000;
@@ -81,6 +82,7 @@ export function ThreadPanel() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [workStage, setWorkStage] = useState<OrchestratedWorkStage>();
   const [connecting, setConnecting] = useState(false);
   const [updatingFork, setUpdatingFork] = useState(false);
   const [updateNotice, setUpdateNotice] = useState<string>();
@@ -126,7 +128,6 @@ export function ThreadPanel() {
       ]);
       setHealth(nextHealth);
       setEntries(thread.turns);
-      setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
     }
@@ -155,6 +156,7 @@ export function ThreadPanel() {
     if (!text || sending) return;
     shouldFollowThreadRef.current = true;
     setSending(true);
+    setWorkStage(undefined);
     setDraft('');
     setError(undefined);
     try {
@@ -169,7 +171,7 @@ export function ThreadPanel() {
           }
         : parseOrchestratedWorkRequest(text);
       if (workRequest) {
-        await createOrchestratedWorkSession(workRequest, navigate);
+        await createOrchestratedWorkSession(workRequest, navigate, setWorkStage);
         await refresh();
         return;
       }
@@ -180,6 +182,7 @@ export function ThreadPanel() {
       setError(cause instanceof Error ? cause.message : 'Message failed');
     } finally {
       setSending(false);
+      setWorkStage(undefined);
     }
   }
 
@@ -347,7 +350,7 @@ export function ThreadPanel() {
             {(sending || health?.busy) && (
               <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
                 <span>•</span>
-                <span>Working…</span>
+                <span>{workStage ? `${workStage}…` : 'Working…'}</span>
               </div>
             )}
             <div ref={endRef} />

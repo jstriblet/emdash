@@ -14,6 +14,19 @@ export type OrchestratedWorkRequest = {
   agent: 'codex' | 'claude';
 };
 
+export type OrchestratedWorkStage =
+  | 'Connecting to the project host'
+  | 'Locating the repository'
+  | 'Registering the project'
+  | 'Loading the project'
+  | 'Creating the work contract'
+  | 'Launching the agent'
+  | 'Recording the execution';
+
+type ProgressReporter = (stage: OrchestratedWorkStage) => void;
+
+const STAGE_TIMEOUT_MS = 45_000;
+
 type OrchestratedProjectType = { type: 'local' } | { type: 'ssh'; connectionId: string };
 
 const REQUEST_PATTERN =
@@ -33,10 +46,15 @@ export function parseOrchestratedWorkRequest(text: string): OrchestratedWorkRequ
 
 export async function createOrchestratedWorkSession(
   request: OrchestratedWorkRequest,
-  navigate: NavigateFnTyped
+  navigate: NavigateFnTyped,
+  onProgress: ProgressReporter = () => {}
 ): Promise<void> {
   const projectManager = getProjectManagerStore();
-  const projectType = await resolveProjectHost(request.hostName);
+  const projectType = await runStage(
+    'Connecting to the project host',
+    resolveProjectHost(request.hostName),
+    onProgress
+  );
   let project = [...projectManager.projects.values()].find(
     (candidate) =>
       candidate.name?.toLowerCase() === request.projectName.toLowerCase() &&
@@ -45,22 +63,34 @@ export async function createOrchestratedWorkSession(
   );
 
   if (!project?.data) {
-    const path = await discoverProjectPath(projectType, request.projectName);
+    const path = await runStage(
+      'Locating the repository',
+      discoverProjectPath(projectType, request.projectName),
+      onProgress
+    );
     if (!path) {
       throw new Error(
         `Orc could not find a Git repository named “${request.projectName}” on ${request.hostName}`
       );
     }
-    const projectId = await projectManager.createProject(projectType, {
-      mode: 'pick',
-      name: request.projectName,
-      path,
-      initGitRepository: false,
-    });
+    const projectId = await runStage(
+      'Registering the project',
+      projectManager.createProject(projectType, {
+        mode: 'pick',
+        name: request.projectName,
+        path,
+        initGitRepository: false,
+      }),
+      onProgress
+    );
     if (!projectId) {
       throw new Error(`Orc found ${path}, but Emdash could not register the project`);
     }
-    await projectManager.hydrateProjectContext(projectId);
+    await runStage(
+      'Loading the project',
+      projectManager.hydrateProjectContext(projectId),
+      onProgress
+    );
     project = projectManager.projects.get(projectId);
   }
 
@@ -72,27 +102,31 @@ export async function createOrchestratedWorkSession(
 
   const taskId = crypto.randomUUID();
   const client = await getOrchestratorClient();
-  const contract = await client.createWorkContract({
-    version: '1',
-    goal: request.goal,
-    non_goals: [],
-    constraints: [`Run on ${request.hostName}`, `Use ${request.agent}`],
-    deliverables: [{ id: 'D1', description: request.goal }],
-    acceptance_checks: [
-      {
-        id: 'A1',
-        description: 'Verify the requested result',
-        procedure: 'Run the project test suite and inspect the resulting diff',
-        expected: 'Tests pass and the implementation satisfies the requested outcome',
-        required: true,
-      },
-    ],
-    definition_of_done: 'D1 is implemented and A1 passes with recorded evidence',
-    escalation_conditions: [
-      'Requirements are ambiguous',
-      'Required access or credentials are missing',
-    ],
-  });
+  const contract = await runStage(
+    'Creating the work contract',
+    client.createWorkContract({
+      version: '1',
+      goal: request.goal,
+      non_goals: [],
+      constraints: [`Run on ${request.hostName}`, `Use ${request.agent}`],
+      deliverables: [{ id: 'D1', description: request.goal }],
+      acceptance_checks: [
+        {
+          id: 'A1',
+          description: 'Verify the requested result',
+          procedure: 'Run the project test suite and inspect the resulting diff',
+          expected: 'Tests pass and the implementation satisfies the requested outcome',
+          required: true,
+        },
+      ],
+      definition_of_done: 'D1 is implemented and A1 passes with recorded evidence',
+      escalation_conditions: [
+        'Requirements are ambiguous',
+        'Required access or credentials are missing',
+      ],
+    }),
+    onProgress
+  );
   const branchStem = request.goal
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -107,45 +141,80 @@ export async function createOrchestratedWorkSession(
     'Do not claim completion until the acceptance check is satisfied.',
   ].join('\n\n');
 
-  await taskManager.createTask({
-    id: taskId,
-    projectId: project.id,
-    taskConfig: {
-      version: '1',
-      name: request.goal,
-      initialConversation: {
-        id: crypto.randomUUID(),
-        provider: request.agent,
-        title: request.goal,
-        autoApprove: true,
-        initialPrompt,
-        type: 'pty',
+  await runStage(
+    'Launching the agent',
+    taskManager.createTask({
+      id: taskId,
+      projectId: project.id,
+      taskConfig: {
+        version: '1',
+        name: request.goal,
+        initialConversation: {
+          id: crypto.randomUUID(),
+          provider: request.agent,
+          title: request.goal,
+          autoApprove: true,
+          initialPrompt,
+          type: 'pty',
+        },
       },
-    },
-    workspaceConfig: {
-      version: '2',
-      git: {
-        kind: 'create-branch',
-        branchName,
-        fromBranch: defaultBranch,
-        pushBranch: false,
+      workspaceConfig: {
+        version: '2',
+        git: {
+          kind: 'create-branch',
+          branchName,
+          fromBranch: defaultBranch,
+          pushBranch: false,
+        },
+        workspace: { kind: 'new-worktree' },
       },
-      workspace: { kind: 'new-worktree' },
-    },
-  });
+    }),
+    onProgress,
+    120_000
+  );
 
-  await client.bindWorkContractExecution({
-    contractId: contract.task_id,
-    execution: {
-      execution_id: crypto.randomUUID(),
-      host_id: project.data.type === 'ssh' ? project.data.connectionId : 'local',
-      project_id: project.id,
-      emdash_task_id: taskId,
-      agent: request.agent,
-      state: 'running',
-    },
-  });
+  await runStage(
+    'Recording the execution',
+    client.bindWorkContractExecution({
+      contractId: contract.task_id,
+      execution: {
+        execution_id: crypto.randomUUID(),
+        host_id: project.data.type === 'ssh' ? project.data.connectionId : 'local',
+        project_id: project.id,
+        emdash_task_id: taskId,
+        agent: request.agent,
+        state: 'running',
+      },
+    }),
+    onProgress
+  );
   navigate(taskViewDef({ projectId: project.id, taskId }));
+}
+
+export async function runStage<T>(
+  stage: OrchestratedWorkStage,
+  operation: Promise<T>,
+  onProgress: ProgressReporter = () => {},
+  timeoutMs = STAGE_TIMEOUT_MS
+): Promise<T> {
+  onProgress(stage);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`${stage} timed out after ${Math.round(timeoutMs / 1_000)} seconds`));
+        }, timeoutMs);
+      }),
+    ]);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : 'Unknown error';
+    if (message.startsWith(stage)) throw cause;
+    throw new Error(`${stage} failed: ${message}`);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function resolveProjectHost(hostName: string): Promise<OrchestratedProjectType> {
