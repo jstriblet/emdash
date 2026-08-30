@@ -70,6 +70,7 @@ export const orchestratorWorkerRestartActionSchema = z.object({
   execution_id: z.string().min(1),
   emdash_task_id: z.string().min(1),
   conversation_id: z.string().min(1),
+  goal: z.string().min(1),
 });
 
 export const orchestratorPendingActionSchema = z.discriminatedUnion('kind', [

@@ -211,10 +211,23 @@ export function ThreadPanel() {
         if (action.kind === 'restart_worker') {
           const manager = getConversationsForTask(action.emdash_task_id);
           const session = manager?.sessions.get(action.conversation_id);
-          if (!manager || !session) throw new Error('Worker conversation is not available');
-          await manager.dehydrateConversation(action.conversation_id);
-          await manager.hydrateConversation(action.conversation_id);
-          await session.connect();
+          const conversation = manager?.conversations.get(action.conversation_id)?.data;
+          if (!manager || !session || !conversation) {
+            throw new Error('Worker conversation is not available');
+          }
+          await manager.deleteConversation(action.conversation_id);
+          await manager.createConversation({
+            id: crypto.randomUUID(),
+            projectId: conversation.projectId,
+            taskId: conversation.taskId,
+            provider: conversation.providerId,
+            title: conversation.title,
+            autoApprove: conversation.autoApprove,
+            model: conversation.model,
+            type: conversation.type,
+            isInitialConversation: conversation.isInitialConversation ?? undefined,
+            initialPrompt: action.goal,
+          });
           await client.completeAction({ actionId: action.action_id });
           await refresh();
           return;
