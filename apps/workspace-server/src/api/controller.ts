@@ -152,7 +152,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     if (!deps.enableOrcCallbacks || watchedOrcConversations.has(conversationId)) return;
     watchedOrcConversations.add(conversationId);
     const output = deps.runtimes.tuiAgents.output.handle({ conversationId });
-    void output.asLiveSource().subscribe(() => {
+    const inspectCurrentPrompt = () => {
       void output.snapshot().then(async (snapshot) => {
         const message = cleanWorkerText(snapshot.data.text.slice(-4000));
         if (!isInteractiveTerminalPrompt(message)) return;
@@ -166,7 +166,11 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           states.data[conversationId]?.providerId
         );
       });
-    });
+    };
+    void output.asLiveSource().subscribe(inspectCurrentPrompt);
+    // Startup dialogs can render before the execution is linked and the live subscription is
+    // installed. Inspect the retained snapshot once so those prompts are still pushed to Orc.
+    inspectCurrentPrompt();
   };
 
   const findManualRun = async (executionId: string) => {

@@ -210,8 +210,8 @@ describe('createWorkspaceWireController', () => {
     const state = {
       conversationId: 'conversation-restored',
       providerId: 'codex',
-      status: 'awaiting-input' as const,
-      lastAssistantMessage: 'Which release channel should I use?',
+      status: 'working' as const,
+      lastAssistantMessage: 'Do you trust the contents of this directory? Press enter to continue',
       updatedAt: 2,
     };
     const source = {
@@ -279,7 +279,7 @@ describe('createWorkspaceWireController', () => {
     });
     expect(requests[1]).toMatchObject({
       url: 'http://127.0.0.1:8790/message',
-      body: { text: 'Which release channel should I use?' },
+      body: { text: 'Do you trust the contents of this directory? Press enter to continue' },
     });
     vi.unstubAllGlobals();
   });
