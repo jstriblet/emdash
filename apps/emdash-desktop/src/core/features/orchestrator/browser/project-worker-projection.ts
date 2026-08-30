@@ -182,9 +182,11 @@ export async function projectOrcWorkersIntoTasks(
       if (task?.data.status !== status) await task?.updateStatus(status);
 
       if (execution.session_id && !linkedConversations.has(execution.session_id)) {
-        await (
-          await getConversationsClient()
-        ).linkConversationToTask({
+        const conversations = await getConversationsClient();
+        await conversations.refreshHostConversations({
+          host: hostRef('remote', connectionId),
+        });
+        await conversations.linkConversationToTask({
           conversationId: execution.session_id,
           projectId: project.id,
           taskId: contract.task_id,

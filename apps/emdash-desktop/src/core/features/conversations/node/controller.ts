@@ -18,6 +18,7 @@ import { hydrateConversation } from './hydrateConversation';
 import { linkConversationToTask } from './link-conversation-to-task';
 import { listHostConversations } from './list-host-conversations';
 import { markConversationSeen } from './markConversationSeen';
+import { refreshHostConversations } from './refresh-host-conversations';
 import { renameConversation } from './renameConversation';
 
 export function createConversationOperations(dependencies: {
@@ -77,6 +78,8 @@ export function createConversationOperations(dependencies: {
     markConversationSeen: (conversationId: string) => markConversationSeen(db, conversationId),
     listHostConversations: (scope: Parameters<typeof listHostConversations>[1]) =>
       listHostConversations(db, scope),
+    refreshHostConversations: (host: Parameters<typeof refreshHostConversations>[2]) =>
+      refreshHostConversations(db, dependencies.runtimes, host),
     linkConversationToTask: (input: Parameters<typeof linkConversationToTask>[1]) =>
       linkConversationToTask(db, input),
     deleteHostConversation: (conversationId: string) =>

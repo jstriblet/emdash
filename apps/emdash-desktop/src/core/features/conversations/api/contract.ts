@@ -1,4 +1,4 @@
-import { serializedHostRefSchema } from '@emdash/core/primitives/host/api';
+import { hostRefSchema, serializedHostRefSchema } from '@emdash/core/primitives/host/api';
 import {
   runtimeResolveErrorSchema,
   type RuntimeResolveError,
@@ -218,6 +218,10 @@ export const conversationsContract = defineContract({
       sshConnectionId: z.string().nullable(),
     }),
     output: z.custom<HostConversationRow[]>(),
+  }),
+  refreshHostConversations: procedure({
+    input: z.object({ host: hostRefSchema }),
+    output: z.void(),
   }),
   linkConversationToTask: procedure({
     input: z.object({ conversationId: z.string(), projectId: z.string(), taskId: z.string() }),

@@ -166,6 +166,7 @@ export function createConversationsWireController(
     markConversationSeen: ({ conversationId }) =>
       conversationOperations.markConversationSeen(conversationId),
     listHostConversations: (scope) => conversationOperations.listHostConversations(scope),
+    refreshHostConversations: ({ host }) => conversationOperations.refreshHostConversations(host),
     linkConversationToTask: (input) => conversationOperations.linkConversationToTask(input),
     deleteHostConversation: ({ conversationId }) =>
       conversationOperations.deleteHostConversation(conversationId),
