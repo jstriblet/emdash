@@ -48,6 +48,11 @@ jobs:
           p12-file-base64: ${{ secrets.CERTIFICATE_P12 }}
           p12-password: ${{ secrets.CERTIFICATE_PASSWORD }}
 
+      - name: Build workspace packages
+        env:
+          VITE_BUILD: orc
+        run: pnpm run build
+
       - name: Build signed Emdash Orc DMG and updater ZIP
         working-directory: apps/emdash-desktop
         env:
