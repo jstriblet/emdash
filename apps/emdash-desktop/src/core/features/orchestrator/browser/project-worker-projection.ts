@@ -78,7 +78,7 @@ function isTerminal(contract: OrchestratorWorkContract): boolean {
   );
 }
 
-function removeFailedTransientProjection(contract: OrchestratorWorkContract): void {
+async function closeTerminalProjection(contract: OrchestratorWorkContract): Promise<void> {
   const execution = contract.executions.at(-1);
   if (!execution || !isTerminal(contract)) return;
   const projects = getProjectManagerStore();
@@ -88,8 +88,13 @@ function removeFailedTransientProjection(contract: OrchestratorWorkContract): vo
   if (!project) return;
   const taskManager = getTaskManagerStore(project.id);
   const task = taskManager?.tasks.get(contract.task_id);
-  if (task?.state !== 'unregistered') return;
-  runInAction(() => taskManager?.tasks.delete(contract.task_id));
+  if (!task || !taskManager) return;
+  if (task.state === 'unregistered') {
+    runInAction(() => taskManager.tasks.delete(contract.task_id));
+    return;
+  }
+  if ('archivedAt' in task.data && task.data.archivedAt) return;
+  await taskManager.archiveTask(contract.task_id);
 }
 
 /**
@@ -105,7 +110,7 @@ export async function projectOrcWorkersIntoTasks(
 
   for (const contract of contracts) {
     const execution = contract.executions.at(-1);
-    removeFailedTransientProjection(contract);
+    await closeTerminalProjection(contract);
     // Completed workers have already been verified and archived on the host. Their
     // workspace records may no longer exist, so replaying them into a fresh desktop
     // would create a task that can never resolve its selected workspace.
