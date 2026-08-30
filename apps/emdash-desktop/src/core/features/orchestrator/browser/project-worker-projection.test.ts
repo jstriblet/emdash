@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasOnlyDisposableProjectTasks,
   isEmptyOrOnlyTerminalTask,
   isOnlyTaskInProject,
   selectProjectionMachineId,
@@ -74,5 +75,34 @@ describe('isEmptyOrOnlyTerminalTask', () => {
 
   it('does not clean a project when another task remains', () => {
     expect(isEmptyOrOnlyTerminalTask(['other-task'], 'orc-task')).toBe(false);
+  });
+});
+
+describe('hasOnlyDisposableProjectTasks', () => {
+  it('ignores a settled unregistered placeholder during Orc cleanup', () => {
+    expect(
+      hasOnlyDisposableProjectTasks(
+        [{ data: { id: 'placeholder' }, state: 'unregistered', phase: 'create-error' }],
+        'orc-task'
+      )
+    ).toBe(true);
+  });
+
+  it('preserves any registered task that could contain manual work', () => {
+    expect(
+      hasOnlyDisposableProjectTasks(
+        [{ data: { id: 'manual-task' }, state: 'provisioned', phase: null }],
+        'orc-task'
+      )
+    ).toBe(false);
+  });
+
+  it('preserves a placeholder while task creation is in progress', () => {
+    expect(
+      hasOnlyDisposableProjectTasks(
+        [{ data: { id: 'creating-task' }, state: 'unregistered', phase: 'creating' }],
+        'orc-task'
+      )
+    ).toBe(false);
   });
 });

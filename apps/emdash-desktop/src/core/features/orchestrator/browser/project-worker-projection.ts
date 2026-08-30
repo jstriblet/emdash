@@ -163,6 +163,17 @@ export function isEmptyOrOnlyTerminalTask(taskIds: Iterable<string>, taskId: str
   return ids.length === 0 || (ids.length === 1 && ids[0] === taskId);
 }
 
+export function hasOnlyDisposableProjectTasks(
+  tasks: Iterable<{ data: { id: string }; state: string; phase: string | null }>,
+  terminalTaskId: string
+): boolean {
+  return [...tasks].every(
+    (task) =>
+      task.data.id === terminalTaskId ||
+      (task.state === 'unregistered' && task.phase !== 'creating')
+  );
+}
+
 async function closeTerminalProjection(contract: OrchestratorWorkContract): Promise<void> {
   const execution = contract.executions.at(-1);
   if (!execution || !isTerminal(contract)) return;
@@ -184,7 +195,7 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   terminalProjectionFirstObservedAt.delete(contract.task_id);
   if (!task) {
     if (
-      isEmptyOrOnlyTerminalTask(taskManager.tasks.keys(), contract.task_id) &&
+      hasOnlyDisposableProjectTasks(taskManager.tasks.values(), contract.task_id) &&
       !projectDeletionAttempts.has(project.id)
     ) {
       projectDeletionAttempts.add(project.id);
@@ -196,8 +207,8 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
     }
     return;
   }
-  const shouldDeleteProject = isEmptyOrOnlyTerminalTask(
-    taskManager.tasks.keys(),
+  const shouldDeleteProject = hasOnlyDisposableProjectTasks(
+    taskManager.tasks.values(),
     contract.task_id
   );
   if (task.state === 'unregistered') {
