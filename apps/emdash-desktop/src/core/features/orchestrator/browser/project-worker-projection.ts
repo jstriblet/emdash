@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import type { OrchestratorWorkContract } from '../api';
+import { getOrchestratorClient } from '../api/browser/client';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -8,6 +10,7 @@ import { log } from '@core/primitives/logging/browser/logger';
 const projectionAttempts = new Set<string>();
 const projectCreationAttempts = new Set<string>();
 const linkedConversations = new Set<string>();
+const REFRESH_INTERVAL_MS = 2_000;
 
 function normalizedHost(value: string): string {
   return value.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
@@ -129,4 +132,28 @@ export async function projectOrcWorkersIntoTasks(
       projectionAttempts.delete(contract.task_id);
     }
   }
+}
+
+/** Keeps server-owned Orc runs projected into the ordinary project rail. */
+export function OrcWorkerProjection() {
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const result = await (await getOrchestratorClient()).workContracts(undefined);
+        if (!disposed) await projectOrcWorkersIntoTasks(result.workContracts);
+      } catch (error) {
+        if (!disposed) log.warn('Unable to refresh Orc project tasks', { error });
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return null;
 }
