@@ -17,7 +17,26 @@ const projectionAttempts = new Set<string>();
 const projectCreationAttempts = new Set<string>();
 const linkedConversations = new Set<string>();
 const openedConversations = new Set<string>();
+const reportedProjectionStages = new Set<string>();
 const REFRESH_INTERVAL_MS = 2_000;
+
+async function reportProjectionStage(
+  executionId: string,
+  stage: string,
+  status: 'started' | 'completed' | 'failed',
+  detail: string
+): Promise<void> {
+  const key = `${executionId}:${stage}:${status}:${detail}`;
+  if (reportedProjectionStages.has(key)) return;
+  reportedProjectionStages.add(key);
+  try {
+    await (
+      await getOrchestratorClient()
+    ).reportActionProgress({ actionId: executionId, stage, status, detail });
+  } catch {
+    reportedProjectionStages.delete(key);
+  }
+}
 
 function normalizedHost(value: string): string {
   return value.toLowerCase().replaceAll(/[^a-z0-9]/g, '');
@@ -143,6 +162,12 @@ export async function projectOrcWorkersIntoTasks(
           path: execution.worktree_path,
         });
         if (!workspace.success) {
+          await reportProjectionStage(
+            execution.execution_id,
+            'Desktop workspace claim',
+            'failed',
+            JSON.stringify(workspace.error)
+          );
           log.debug('Orc workspace could not be claimed by the desktop', {
             taskId: contract.task_id,
             workspacePath: execution.worktree_path,
@@ -150,6 +175,12 @@ export async function projectOrcWorkersIntoTasks(
           });
           continue;
         }
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop workspace claim',
+          'completed',
+          workspace.data.id
+        );
 
         const created = await (
           await getTasksWireClient()
@@ -171,6 +202,12 @@ export async function projectOrcWorkersIntoTasks(
           },
         });
         if (!created.success) {
+          await reportProjectionStage(
+            execution.execution_id,
+            'Desktop task projection',
+            'failed',
+            JSON.stringify(created.error)
+          );
           log.debug('Orc workspace is not ready for project-rail projection', {
             taskId: contract.task_id,
             projectPath: execution.project_id,
@@ -178,6 +215,12 @@ export async function projectOrcWorkersIntoTasks(
           });
           continue;
         }
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop task projection',
+          'completed',
+          contract.task_id
+        );
         task = taskManager.tasks.get(contract.task_id);
       }
 
@@ -193,8 +236,20 @@ export async function projectOrcWorkersIntoTasks(
           taskId: contract.task_id,
         });
         if (!adopted) {
+          await reportProjectionStage(
+            execution.execution_id,
+            'Desktop conversation adoption',
+            'failed',
+            `Host conversation ${execution.session_id} was absent from the authoritative snapshot`
+          );
           throw new Error(`Host conversation ${execution.session_id} was not found`);
         }
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop conversation adoption',
+          'completed',
+          execution.session_id
+        );
         linkedConversations.add(execution.session_id);
       }
       if (execution.session_id && !openedConversations.has(execution.session_id)) {
@@ -209,9 +264,31 @@ export async function projectOrcWorkersIntoTasks(
           );
           taskView.setFocusedRegion('main');
           openedConversations.add(execution.session_id);
+          await reportProjectionStage(
+            execution.execution_id,
+            'Desktop conversation pane',
+            'completed',
+            execution.session_id
+          );
+        } else {
+          await reportProjectionStage(
+            execution.execution_id,
+            'Desktop conversation pane',
+            'started',
+            JSON.stringify({
+              conversationHydrated: Boolean(conversation),
+              taskCompositionMounted: Boolean(taskView),
+            })
+          );
         }
       }
     } catch (error) {
+      await reportProjectionStage(
+        execution.execution_id,
+        'Desktop worker projection',
+        'failed',
+        error instanceof Error ? error.message : String(error)
+      );
       log.warn('Unable to project Orc worker into the project rail yet', {
         taskId: contract.task_id,
         projectPath: execution.project_id,
