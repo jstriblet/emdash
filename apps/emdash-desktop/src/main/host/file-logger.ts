@@ -12,6 +12,7 @@ const LOG_FILE_NAME = 'emdash.log';
 const DIAGNOSTIC_ATTACHMENT_FILENAME = 'emdash-diagnostics.log';
 const RENDERER_LOG_PAYLOAD_LIMIT = 64 * 1024;
 const PROCESS_EXIT_FLUSH_TIMEOUT_MS = 1000;
+const ORC_CRASH_REPORT_TIMEOUT_MS = 2500;
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 let logFilePath: string | undefined;
@@ -88,21 +89,40 @@ export async function getDiagnosticLogAttachment() {
 export function registerProcessErrorLogging(logger: { error(...input: unknown[]): void }) {
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught exception', error);
-    flushAndExit();
+    flushAndExit('uncaught-exception', error);
   });
 
   process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled rejection', reason);
-    flushAndExit();
+    flushAndExit('unhandled-rejection', reason);
   });
 }
 
-function flushAndExit() {
+function flushAndExit(kind: string, error: unknown) {
   const flush = Promise.race([
-    flushLogWrites(),
+    Promise.allSettled([flushLogWrites(), reportEmdashCrash(kind, error)]),
     new Promise<void>((resolve) => setTimeout(resolve, PROCESS_EXIT_FLUSH_TIMEOUT_MS)),
   ]);
   void flush.finally(() => process.exit(1));
+}
+
+export async function reportEmdashCrash(kind: string, error: unknown): Promise<void> {
+  const diagnostic = await getDiagnosticLogAttachment();
+  const message =
+    error instanceof Error
+      ? `${error.name}: ${error.message}\n${error.stack ?? ''}`
+      : String(error);
+  await fetch('http://127.0.0.1:8790/diagnostics/emdash-crash', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      kind,
+      message: redactAll(message).slice(0, 16_000),
+      log_tail: diagnostic.content,
+      observed_at: new Date().toISOString(),
+    }),
+    signal: AbortSignal.timeout(ORC_CRASH_REPORT_TIMEOUT_MS),
+  }).catch(() => undefined);
 }
 
 export function writeRendererLogEntry(entry: {

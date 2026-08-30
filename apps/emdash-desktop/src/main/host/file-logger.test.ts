@@ -2,7 +2,12 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { flushLogWrites, redactDiagnosticLog, writeRendererLogEntry } from './file-logger';
+import {
+  flushLogWrites,
+  redactDiagnosticLog,
+  reportEmdashCrash,
+  writeRendererLogEntry,
+} from './file-logger';
 
 vi.mock('electron', () => ({
   app: {
@@ -29,6 +34,28 @@ describe('file transport output', () => {
     const written = await readFile(logFile, 'utf8');
     expect(written).not.toContain(token);
     expect(written).toContain('[REDACTED_GITHUB_TOKEN]');
+  });
+});
+
+describe('Orc crash diagnostics', () => {
+  it('posts a redacted crash report to the local Orc tunnel', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await reportEmdashCrash('render-process-gone', new Error('password=hunter2'));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8790/diagnostics/emdash-crash',
+      expect.objectContaining({ method: 'POST' })
+    );
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(request).toBeDefined();
+    if (!request) throw new Error('Expected crash-report request options');
+    expect(String(request.body)).not.toContain('hunter2');
+    expect(String(request.body)).toContain('[REDACTED]');
+    vi.unstubAllGlobals();
   });
 });
 

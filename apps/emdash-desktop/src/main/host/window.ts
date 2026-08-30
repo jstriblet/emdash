@@ -18,6 +18,7 @@ import {
   validateBrowserWebviewAttach,
 } from '@main/host/browser/webview-security';
 import { registerExternalLinkHandlers } from '@main/host/externalLinks';
+import { reportEmdashCrash } from '@main/host/file-logger';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { APP_ORIGIN } from './protocol';
@@ -78,6 +79,9 @@ export function createMainWindow(): BrowserWindow {
     // One of the two boot success signals; the crash-loop marker clears only
     // when the backend chain has also finished (see boot-status).
     reportBootSuccessSignal('window-load');
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    void reportEmdashCrash('render-process-gone', details);
   });
 
   if (process.platform !== 'darwin') {
