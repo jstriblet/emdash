@@ -23,6 +23,7 @@ import {
 } from './worker-telemetry';
 
 const REFRESH_INTERVAL_MS = 2_000;
+const ARCHIVE_HANDOFF_TIMEOUT_MS = 15_000;
 const DISPLAY_TURNS = 4;
 const IS_DEVELOPMENT = import.meta.env.DEV;
 
@@ -214,7 +215,12 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
         if (action.kind === 'archive_worker') {
           const manager = getTaskManagerStore(action.project_id);
           if (!manager) throw new Error('Worker task manager is not available');
-          await manager.archiveTask(action.emdash_task_id);
+          await Promise.race([
+            manager.archiveTask(action.emdash_task_id),
+            new Promise<void>((resolve) =>
+              window.setTimeout(resolve, ARCHIVE_HANDOFF_TIMEOUT_MS)
+            ),
+          ]);
           await client.completeAction({ actionId: action.action_id });
           await refresh();
           return;
