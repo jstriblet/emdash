@@ -115,10 +115,10 @@ function parseActivity(entry: OrchestratorEntry): Activity | undefined {
 function activityHeading(activity: Activity): string {
   if (activity.kind === 'command') {
     const command = activity.title.replace(/^\/bin\/bash -lc /, '').replace(/^"|"$/g, '');
-    const compact = command.split('\n')[0].slice(0, 82);
-    if (activity.status === 'in_progress') return `Running ${compact}`;
-    if (activity.status === 'failed') return `Command failed ${compact}`;
-    return `Ran ${compact}`;
+    const displayCommand = command.replace(/\s*\n\s*/g, ' ');
+    if (activity.status === 'in_progress') return `Running ${displayCommand}`;
+    if (activity.status === 'failed') return `Command failed ${displayCommand}`;
+    return `Ran ${displayCommand}`;
   }
   if (activity.kind === 'file_change') {
     return `${activity.status === 'in_progress' ? 'Editing' : 'Edited'} ${activity.title.replace(/^Changed /, '')}`;
@@ -129,9 +129,16 @@ function activityHeading(activity: Activity): string {
   return activity.title;
 }
 
-function activityDetail(detail: string): { hidden: number; lines: string[] } {
+export function activityDetail(
+  detail: string,
+  expanded = false
+): { hidden: number; lines: string[] } {
   const lines = detail.trim().split('\n').filter(Boolean);
-  return { hidden: Math.max(0, lines.length - 8), lines: lines.slice(-8) };
+  if (expanded || lines.length <= 5) return { hidden: 0, lines };
+  return {
+    hidden: lines.length - 4,
+    lines: [lines[0], ...lines.slice(-3)],
+  };
 }
 
 export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?: boolean } = {}) {
@@ -142,6 +149,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
   const [queuedFollowUps, setQueuedFollowUps] = useState<string[]>([]);
+  const [expandedActivityIds, setExpandedActivityIds] = useState<Set<string>>(new Set());
   const [workingElapsedSeconds, setWorkingElapsedSeconds] = useState(0);
   const [cancelConfirmationVisible, setCancelConfirmationVisible] = useState(false);
   const [workStage, setWorkStage] = useState<OrchestratedWorkStage>();
@@ -188,6 +196,22 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
       return !(entry.role === 'assistant' && entry.turn_id && progressTurns.has(entry.turn_id));
     });
   }, [entries]);
+
+  useEffect(() => {
+    const toggleToolTranscripts = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey && event.key.toLowerCase() === 't')) return;
+      const activityIds = visibleEntries
+        .filter((entry) => parseActivity(entry)?.detail)
+        .map((entry) => entry.id.toString());
+      if (activityIds.length === 0) return;
+      event.preventDefault();
+      setExpandedActivityIds((current) =>
+        activityIds.some((id) => current.has(id)) ? new Set() : new Set(activityIds)
+      );
+    };
+    window.addEventListener('keydown', toggleToolTranscripts);
+    return () => window.removeEventListener('keydown', toggleToolTranscripts);
+  }, [visibleEntries]);
 
   const refresh = useCallback(async () => {
     try {
@@ -697,7 +721,9 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
               const activity = parseActivity(entry);
               if (activity) {
                 const isWorking = activity.status === 'in_progress';
-                const detail = activityDetail(activity.detail);
+                const activityKey = entry.id.toString();
+                const expanded = expandedActivityIds.has(activityKey);
+                const detail = activityDetail(activity.detail, expanded);
                 return (
                   <div
                     key={entry.id}
@@ -707,14 +733,15 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                       •
                     </span>
                     <div className="min-w-0 text-[#b6b0a7]">
-                      <div className={activity.status === 'failed' ? 'text-[#c98279]' : ''}>
+                      <div
+                        className={`break-words whitespace-pre-wrap ${
+                          activity.status === 'failed' ? 'text-[#c98279]' : ''
+                        }`}
+                      >
                         {activityHeading(activity)}
                       </div>
                       {detail.lines.length > 0 && (
                         <div className="mt-1 text-xs leading-5 text-[#7d7871]">
-                          {detail.hidden > 0 && (
-                            <div className="pl-4">… {detail.hidden} lines hidden</div>
-                          )}
                           {detail.lines.map((line, index) => (
                             <div key={`${entry.id}:${index}`} className="flex min-w-0">
                               <span className="w-4 shrink-0 text-[#5f5b56]">
@@ -725,6 +752,24 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                               </span>
                             </div>
                           ))}
+                          {(detail.hidden > 0 || expanded) && activity.detail.trim() && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedActivityIds((current) => {
+                                  const next = new Set(current);
+                                  if (expanded) next.delete(activityKey);
+                                  else next.add(activityKey);
+                                  return next;
+                                })
+                              }
+                              className="mt-1 pl-4 text-left text-[#817d77] hover:text-[#b6b0a7]"
+                            >
+                              {expanded
+                                ? 'Collapse transcript (ctrl + t)'
+                                : `… +${detail.hidden} lines (ctrl + t to view transcript)`}
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

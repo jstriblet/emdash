@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { escapeCancelAction, shouldFollowOrcThread, workingStatus } from './thread-panel';
+import {
+  activityDetail,
+  escapeCancelAction,
+  shouldFollowOrcThread,
+  workingStatus,
+} from './thread-panel';
+
+describe('activityDetail', () => {
+  const transcript = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'].join('\n');
+
+  it('keeps a compact head and tail while reporting truncated lines', () => {
+    expect(activityDetail(transcript)).toEqual({
+      hidden: 2,
+      lines: ['first', 'fourth', 'fifth', 'sixth'],
+    });
+  });
+
+  it('returns the complete transcript when expanded', () => {
+    expect(activityDetail(transcript, true)).toEqual({
+      hidden: 0,
+      lines: ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'],
+    });
+  });
+});
 
 describe('shouldFollowOrcThread', () => {
   it('keeps the submitted turn pinned while Orc is working', () => {
