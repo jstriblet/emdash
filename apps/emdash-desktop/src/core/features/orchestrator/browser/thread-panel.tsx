@@ -1,6 +1,14 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { ReplicaLog } from '@emdash/wire/live';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
@@ -25,6 +33,10 @@ const REFRESH_INTERVAL_MS = 2_000;
 const ARCHIVE_HANDOFF_TIMEOUT_MS = 15_000;
 const DISPLAY_TURNS = 4;
 const IS_DEVELOPMENT = import.meta.env.DEV;
+
+export function shouldFollowOrcThread(submittedTurnInFlight: boolean, distanceFromBottom: number) {
+  return submittedTurnInFlight || distanceFromBottom < 80;
+}
 
 async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
   let output = '';
@@ -123,6 +135,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const [machines, setMachines] = useState<OrcMachine[]>([]);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const shouldFollowThreadRef = useRef(true);
+  const submittedTurnInFlightRef = useRef(false);
   const endRef = useRef<HTMLDivElement>(null);
   const activeMcpActionIdsRef = useRef(new Set<string>());
   const actionInFlightRef = useRef(false);
@@ -419,14 +432,17 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     };
   }, [backgroundRuntime]);
 
-  useEffect(() => {
-    if (shouldFollowThreadRef.current) endRef.current?.scrollIntoView({ block: 'end' });
-  }, [entries]);
+  useLayoutEffect(() => {
+    if (!shouldFollowThreadRef.current) return;
+    const viewport = scrollViewportRef.current;
+    if (viewport) viewport.scrollTop = viewport.scrollHeight;
+  }, [entries, sending, workStage]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
     if (!text || sending) return;
+    submittedTurnInFlightRef.current = true;
     shouldFollowThreadRef.current = true;
     setSending(true);
     setWorkStage(undefined);
@@ -440,6 +456,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
       setDraft(text);
       setError(cause instanceof Error ? cause.message : 'Message failed');
     } finally {
+      submittedTurnInFlightRef.current = false;
       setSending(false);
       setWorkStage(undefined);
     }
@@ -491,8 +508,12 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
         ref={scrollViewportRef}
         onScroll={(event) => {
           const viewport = event.currentTarget;
-          shouldFollowThreadRef.current =
-            viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+          const distanceFromBottom =
+            viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+          shouldFollowThreadRef.current = shouldFollowOrcThread(
+            submittedTurnInFlightRef.current,
+            distanceFromBottom
+          );
         }}
         className="min-h-0 flex-1 overflow-y-auto px-5 py-5 text-[13px] leading-6 sm:px-8"
       >
