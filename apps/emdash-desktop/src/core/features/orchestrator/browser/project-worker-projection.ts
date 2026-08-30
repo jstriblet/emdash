@@ -171,7 +171,11 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
     (candidate) => candidate.data?.type === 'ssh' && candidate.data.path === execution.project_id
   );
   if (!project) return;
-  const taskManager = getTaskManagerStore(project.id);
+  let taskManager = getTaskManagerStore(project.id);
+  if (!taskManager) {
+    await projects.hydrateProjectContext(project.id);
+    taskManager = getTaskManagerStore(project.id);
+  }
   if (!taskManager) return;
   const task = taskManager.tasks.get(contract.task_id);
   const firstObservedAt = terminalProjectionFirstObservedAt.get(contract.task_id) ?? Date.now();
