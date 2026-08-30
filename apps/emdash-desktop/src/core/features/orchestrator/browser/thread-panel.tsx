@@ -11,7 +11,6 @@ import type { OrchestratorEntry, OrchestratorHealth, OrchestratorPendingAction }
 import { getOrchestratorClient } from '../api/browser/client';
 import {
   createOrchestratedWorkSession,
-  parseOrchestratedWorkRequest,
   type OrchestratedWorkStage,
 } from './orchestrated-work-request';
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
@@ -217,9 +216,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
           if (!manager) throw new Error('Worker task manager is not available');
           await Promise.race([
             manager.archiveTask(action.emdash_task_id),
-            new Promise<void>((resolve) =>
-              window.setTimeout(resolve, ARCHIVE_HANDOFF_TIMEOUT_MS)
-            ),
+            new Promise<void>((resolve) => window.setTimeout(resolve, ARCHIVE_HANDOFF_TIMEOUT_MS)),
           ]);
           await client.completeAction({ actionId: action.action_id });
           await refresh();
@@ -299,7 +296,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                 ? 'Sending worker input'
                 : action.kind === 'archive_worker'
                   ? 'Archiving completed worker'
-                : 'Creating work session',
+                  : 'Creating work session',
             status: 'failed',
             detail,
           });
@@ -437,29 +434,6 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     setError(undefined);
     try {
       const client = await getOrchestratorClient();
-      const resolution = await client.resolveAction({ text });
-      const workRequest = resolution.action
-        ? {
-            projectName: resolution.action.project_name,
-            hostName: resolution.action.host_name,
-            goal: resolution.action.goal,
-            agent: resolution.action.agent,
-          }
-        : parseOrchestratedWorkRequest(text);
-      if (workRequest) {
-        const actionId = resolution.action?.action_id;
-        await createOrchestratedWorkSession(
-          workRequest,
-          navigate,
-          async (stage, status, detail) => {
-            if (status === 'started') setWorkStage(stage);
-            if (!actionId) return;
-            await client.reportActionProgress({ actionId, stage, status, detail });
-          }
-        );
-        await refresh();
-        return;
-      }
       await client.send({ text });
       await refresh();
     } catch (cause) {
