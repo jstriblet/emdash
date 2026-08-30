@@ -9,7 +9,7 @@ import {
   LoaderCircle,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getMachinesStore } from '@core/features/machines/contributions/app-stores';
 import type { ConnectionTestResult, SshConfig, SshConfigHost } from '@core/primitives/ssh/api';
 import { suggestedAuthTypeForSshConfigHost, type MachineAuthType } from './machine-form-model';
@@ -160,6 +160,7 @@ export function useMachineForm({ initialConfig, onSaved }: UseMachineFormOptions
   const [selectedSshConfigAlias, setSelectedSshConfigAlias] = useState(
     initialConfig?.sshConfigAlias ?? ''
   );
+  const appliedSshConfigAliasRef = useRef(initialConfig?.sshConfigAlias ?? '');
 
   const findDuplicateMachine = useCallback(
     (name: string) =>
@@ -290,10 +291,13 @@ export function useMachineForm({ initialConfig, onSaved }: UseMachineFormOptions
   useEffect(() => {
     if (!selectedSshConfigAlias || !selectedSshConfigHost) return;
     if (form.state.values.sshConfigAlias !== selectedSshConfigAlias) return;
+    if (appliedSshConfigAliasRef.current === selectedSshConfigAlias) return;
+    appliedSshConfigAliasRef.current = selectedSshConfigAlias;
     applySshConfigHostFields(selectedSshConfigHost);
   }, [applySshConfigHostFields, form, selectedSshConfigAlias, selectedSshConfigHost]);
 
   const applySshConfigHost = (host: SshConfigHost) => {
+    appliedSshConfigAliasRef.current = host.host;
     setSelectedSshConfigAlias(host.host);
     form.setFieldValue('sshConfigAlias', host.host);
     form.setFieldValue('name', form.state.values.name || host.host);
@@ -302,6 +306,7 @@ export function useMachineForm({ initialConfig, onSaved }: UseMachineFormOptions
   };
 
   const selectManualConnection = () => {
+    appliedSshConfigAliasRef.current = '';
     setSelectedSshConfigAlias('');
     form.setFieldValue('sshConfigAlias', '');
     form.setFieldValue('name', '');
