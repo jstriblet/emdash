@@ -6,6 +6,7 @@ import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { getWorkspaceRegistryWireClient } from '@core/features/workspaces/api/browser/client';
 import { log } from '@core/primitives/logging/browser/logger';
 import type { OrchestratorWorkContract } from '../api';
@@ -191,6 +192,13 @@ export async function projectOrcWorkersIntoTasks(
           projectId: project.id,
           taskId: contract.task_id,
         });
+        const taskView = getTaskComposition(project.id, contract.task_id);
+        taskView?.paneLayout.open(
+          'conversation',
+          { conversationId: execution.session_id },
+          { preview: false }
+        );
+        taskView?.setFocusedRegion('main');
         linkedConversations.add(execution.session_id);
       }
     } catch (error) {
