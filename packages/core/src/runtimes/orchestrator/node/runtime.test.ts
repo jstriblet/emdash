@@ -69,6 +69,29 @@ describe('OrchestratorRuntime', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ surface: 'emdash', text: 'hello' });
   });
 
+  it('resolves typed work-session actions without entering the chat loop', async () => {
+    const action = {
+      kind: 'create_work_session',
+      action_id: 'action-1',
+      project_name: 'BookScape',
+      host_name: 'ThinkCenter',
+      goal: 'add a README note',
+      agent: 'codex',
+      acceptance_checks: [{ id: 'A1', description: 'Verify the requested result', required: true }],
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ action }));
+    const runtime = new OrchestratorRuntime({ baseUrl: 'http://orc.test', fetch });
+
+    await expect(runtime.resolveAction('create work')).resolves.toEqual({ action });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://orc.test/actions/resolve',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ surface: 'emdash', text: 'create work' }),
+      })
+    );
+  });
+
   it('lists work contracts from the Orc response envelope', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()
@@ -141,9 +164,11 @@ describe('OrchestratorRuntime', () => {
       state: 'running' as const,
     };
 
-    await expect(runtime.bindWorkContractExecution('contract-1', execution)).resolves.toMatchObject({
-      executions: [{ emdash_task_id: 'emdash-task-1' }],
-    });
+    await expect(runtime.bindWorkContractExecution('contract-1', execution)).resolves.toMatchObject(
+      {
+        executions: [{ emdash_task_id: 'emdash-task-1' }],
+      }
+    );
     expect(fetch).toHaveBeenCalledWith(
       'http://orc.test/work-contracts/contract-1/executions',
       expect.objectContaining({ method: 'POST', body: JSON.stringify(execution) })
@@ -160,12 +185,14 @@ describe('OrchestratorRuntime', () => {
   });
 
   it('includes Orc validation detail when a contract transition is rejected', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
-      Response.json(
-        { detail: 'completion blocked by required checks: A1' },
-        { status: 409, statusText: 'Conflict' }
-      )
-    );
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { detail: 'completion blocked by required checks: A1' },
+          { status: 409, statusText: 'Conflict' }
+        )
+      );
     const runtime = new OrchestratorRuntime({ fetch });
 
     await expect(runtime.workContracts()).rejects.toThrow(

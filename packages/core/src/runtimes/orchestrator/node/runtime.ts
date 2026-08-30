@@ -1,8 +1,11 @@
+import { z } from 'zod';
 import {
+  orchestratorActionResolutionSchema,
   orchestratorHealthSchema,
   orchestratorReplySchema,
   orchestratorWorkContractSchema,
   orchestratorThreadSchema,
+  type OrchestratorActionResolution,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorReply,
@@ -11,7 +14,6 @@ import {
   type OrchestratorWorkContractInput,
   type OrchestratorWorkContractUpdateInput,
 } from '#runtimes/orchestrator/api';
-import { z } from 'zod';
 
 type Fetch = typeof globalThis.fetch;
 
@@ -53,17 +55,35 @@ export class OrchestratorRuntime {
     );
   }
 
+  resolveAction(text: string): Promise<OrchestratorActionResolution> {
+    return this.#request(
+      '/actions/resolve',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ surface: 'emdash', text }),
+      },
+      orchestratorActionResolutionSchema.parse
+    );
+  }
+
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }> {
     return this.#request('/work-contracts', undefined, (value) => {
       const record = value as { work_contracts?: unknown };
-      return { workContracts: z.array(orchestratorWorkContractSchema).parse(record.work_contracts) };
+      return {
+        workContracts: z.array(orchestratorWorkContractSchema).parse(record.work_contracts),
+      };
     });
   }
 
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract> {
     return this.#request(
       '/work-contracts',
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(contract) },
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(contract),
+      },
       orchestratorWorkContractSchema.parse
     );
   }
@@ -74,7 +94,11 @@ export class OrchestratorRuntime {
   ): Promise<OrchestratorWorkContract> {
     return this.#request(
       `/work-contracts/${encodeURIComponent(contractId)}/updates`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(update) },
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(update),
+      },
       orchestratorWorkContractSchema.parse
     );
   }

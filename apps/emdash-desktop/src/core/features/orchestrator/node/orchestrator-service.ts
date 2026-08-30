@@ -3,6 +3,7 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
+  OrchestratorActionResolution,
   OrchestratorHealth,
   OrchestratorExecutionLinkInput,
   OrchestratorForkUpdate,
@@ -30,6 +31,7 @@ export type OrchestratorRuntimeClient = {
   health(): Promise<OrchestratorHealth>;
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
+  resolveAction(text: string): Promise<OrchestratorActionResolution>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
   updateWorkContract(
@@ -151,6 +153,10 @@ export class OrchestratorService {
 
   send(text: string): Promise<OrchestratorReply> {
     return this.runtime.send(text);
+  }
+
+  resolveAction(text: string): Promise<OrchestratorActionResolution> {
+    return this.runtime.resolveAction(text);
   }
 
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }> {

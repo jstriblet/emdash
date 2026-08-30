@@ -40,6 +40,26 @@ export const orchestratorReplySchema = z.object({
   error: z.string().optional(),
 });
 
+export const orchestratorWorkSessionActionSchema = z.object({
+  kind: z.literal('create_work_session'),
+  action_id: z.string().min(1),
+  project_name: z.string().min(1),
+  host_name: z.string().min(1),
+  goal: z.string().min(1),
+  agent: z.enum(['codex', 'claude']),
+  acceptance_checks: z.array(
+    z.object({
+      id: z.string().min(1),
+      description: z.string().min(1),
+      required: z.boolean(),
+    })
+  ),
+});
+
+export const orchestratorActionResolutionSchema = z.object({
+  action: orchestratorWorkSessionActionSchema.nullable(),
+});
+
 export const orchestratorForkUpdateSchema = z.object({
   updated: z.boolean(),
   message: z.string(),
@@ -150,12 +170,12 @@ export type OrchestratorEntry = z.infer<typeof orchestratorEntrySchema>;
 export type OrchestratorHealth = z.infer<typeof orchestratorHealthSchema>;
 export type OrchestratorThread = z.infer<typeof orchestratorThreadSchema>;
 export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
+export type OrchestratorActionResolution = z.infer<typeof orchestratorActionResolutionSchema>;
+export type OrchestratorWorkSessionAction = z.infer<typeof orchestratorWorkSessionActionSchema>;
 export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
 export type OrchestratorWorkContractInput = z.infer<typeof orchestratorWorkContractInputSchema>;
 export type OrchestratorWorkContract = z.infer<typeof orchestratorWorkContractSchema>;
-export type OrchestratorExecutionLinkInput = z.infer<
-  typeof orchestratorExecutionLinkInputSchema
->;
+export type OrchestratorExecutionLinkInput = z.infer<typeof orchestratorExecutionLinkInputSchema>;
 export type OrchestratorWorkContractUpdateInput = z.infer<
   typeof orchestratorWorkContractUpdateInputSchema
 >;

@@ -2,10 +2,7 @@ import { createServer, connect as connectSocket, type Server } from 'node:net';
 import type { OrchestratorHealth } from '@emdash/core/runtimes/orchestrator/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
-import {
-  OrchestratorService,
-  type CreateOrchestratorRuntime,
-} from './orchestrator-service';
+import { OrchestratorService, type CreateOrchestratorRuntime } from './orchestrator-service';
 
 describe('OrchestratorService', () => {
   let remote: Server | undefined;
@@ -58,6 +55,7 @@ describe('OrchestratorService', () => {
       },
       thread: vi.fn(),
       send: vi.fn(),
+      resolveAction: vi.fn(),
       workContracts: vi.fn(),
       createWorkContract: vi.fn(),
       updateWorkContract: vi.fn(),

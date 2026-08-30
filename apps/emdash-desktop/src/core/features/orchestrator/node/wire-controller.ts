@@ -1,5 +1,6 @@
 import {
   orchestratorContract,
+  type OrchestratorActionResolution,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorForkUpdate,
@@ -18,6 +19,7 @@ export type OrchestratorRuntimePort = {
   health(): Promise<OrchestratorHealth>;
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
+  resolveAction(text: string): Promise<OrchestratorActionResolution>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
   updateWorkContract(
@@ -38,6 +40,7 @@ export function createOrchestratorWireController(runtime: OrchestratorRuntimePor
     health: () => runtime.health(),
     thread: ({ limit }) => runtime.thread(limit),
     send: ({ text }) => runtime.send(text),
+    resolveAction: ({ text }) => runtime.resolveAction(text),
     workContracts: () => runtime.workContracts(),
     createWorkContract: (contract) => runtime.createWorkContract(contract),
     updateWorkContract: ({ contractId, update }) => runtime.updateWorkContract(contractId, update),

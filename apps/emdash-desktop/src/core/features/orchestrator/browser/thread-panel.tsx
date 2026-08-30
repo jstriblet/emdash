@@ -158,12 +158,21 @@ export function ThreadPanel() {
     setDraft('');
     setError(undefined);
     try {
-      const workRequest = parseOrchestratedWorkRequest(text);
+      const client = await getOrchestratorClient();
+      const resolution = await client.resolveAction({ text });
+      const workRequest = resolution.action
+        ? {
+            projectName: resolution.action.project_name,
+            hostName: resolution.action.host_name,
+            goal: resolution.action.goal,
+            agent: resolution.action.agent,
+          }
+        : parseOrchestratedWorkRequest(text);
       if (workRequest) {
         await createOrchestratedWorkSession(workRequest, navigate);
+        await refresh();
         return;
       }
-      const client = await getOrchestratorClient();
       await client.send({ text });
       await refresh();
     } catch (cause) {
