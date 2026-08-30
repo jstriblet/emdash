@@ -14,6 +14,7 @@ import type {
   OrchestratorWorkContractInput,
   OrchestratorWorkContractUpdateInput,
   OrchestratorWorkSessionAction,
+  OrchestratorWorkerTelemetryInput,
 } from '@emdash/core/runtimes/orchestrator/api';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 
@@ -37,6 +38,7 @@ export type OrchestratorRuntimeClient = {
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }>;
   claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }>;
   completeAction(actionId: string): Promise<{ completed: boolean }>;
+  reportWorkerTelemetry(input: OrchestratorWorkerTelemetryInput): Promise<{ recorded: boolean }>;
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
@@ -175,6 +177,10 @@ export class OrchestratorService {
 
   completeAction(actionId: string): Promise<{ completed: boolean }> {
     return this.runtime.completeAction(actionId);
+  }
+
+  reportWorkerTelemetry(input: OrchestratorWorkerTelemetryInput): Promise<{ recorded: boolean }> {
+    return this.runtime.reportWorkerTelemetry(input);
   }
 
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }> {

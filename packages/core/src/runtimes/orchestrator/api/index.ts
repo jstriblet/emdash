@@ -18,6 +18,8 @@ export {
   orchestratorWorkContractInputSchema,
   orchestratorWorkContractSchema,
   orchestratorWorkContractUpdateInputSchema,
+  orchestratorWorkerTelemetryInputSchema,
+  orchestratorWorkerTelemetryResultSchema,
   type OrchestratorActionResolution,
   type OrchestratorActionProgressInput,
   type OrchestratorEntry,
@@ -30,4 +32,5 @@ export {
   type OrchestratorWorkContractInput,
   type OrchestratorWorkContractUpdateInput,
   type OrchestratorWorkSessionAction,
+  type OrchestratorWorkerTelemetryInput,
 } from './schemas';

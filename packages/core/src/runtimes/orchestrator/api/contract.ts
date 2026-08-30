@@ -15,6 +15,8 @@ import {
   orchestratorWorkContractSchema,
   orchestratorWorkContractUpdateInputSchema,
   orchestratorThreadSchema,
+  orchestratorWorkerTelemetryInputSchema,
+  orchestratorWorkerTelemetryResultSchema,
 } from './schemas';
 
 export const orchestratorDomain = 'orchestrator' as const;
@@ -44,6 +46,10 @@ export const orchestratorContract = defineContract({
   completeAction: procedure({
     input: z.object({ actionId: z.string().min(1) }),
     output: orchestratorActionCompletionSchema,
+  }),
+  reportWorkerTelemetry: procedure({
+    input: orchestratorWorkerTelemetryInputSchema,
+    output: orchestratorWorkerTelemetryResultSchema,
   }),
   reportActionProgress: procedure({
     input: orchestratorActionProgressInputSchema,

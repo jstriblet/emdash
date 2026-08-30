@@ -11,6 +11,7 @@ import {
   type OrchestratorWorkContractInput,
   type OrchestratorWorkContractUpdateInput,
   type OrchestratorWorkSessionAction,
+  type OrchestratorWorkerTelemetryInput,
 } from '@emdash/core/runtimes/orchestrator/api';
 import { createController, type Controller } from '@emdash/wire/rpc';
 
@@ -25,6 +26,7 @@ export type OrchestratorRuntimePort = {
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }>;
   claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }>;
   completeAction(actionId: string): Promise<{ completed: boolean }>;
+  reportWorkerTelemetry(input: OrchestratorWorkerTelemetryInput): Promise<{ recorded: boolean }>;
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
@@ -50,6 +52,7 @@ export function createOrchestratorWireController(runtime: OrchestratorRuntimePor
     pendingActions: () => runtime.pendingActions(),
     claimAction: () => runtime.claimAction(),
     completeAction: ({ actionId }) => runtime.completeAction(actionId),
+    reportWorkerTelemetry: (input) => runtime.reportWorkerTelemetry(input),
     reportActionProgress: (input) => runtime.reportActionProgress(input),
     workContracts: () => runtime.workContracts(),
     createWorkContract: (contract) => runtime.createWorkContract(contract),

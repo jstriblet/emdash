@@ -10,6 +10,7 @@ import {
   type OrchestratorActionResolution,
   type OrchestratorActionProgressInput,
   type OrchestratorWorkSessionAction,
+  type OrchestratorWorkerTelemetryInput,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorReply,
@@ -88,6 +89,26 @@ export class OrchestratorRuntime {
       `/actions/${encodeURIComponent(actionId)}/complete`,
       { method: 'POST' },
       (value) => value as { completed: boolean }
+    );
+  }
+
+  reportWorkerTelemetry(input: OrchestratorWorkerTelemetryInput): Promise<{ recorded: boolean }> {
+    return this.#request(
+      `/workers/${encodeURIComponent(input.executionId)}/telemetry`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          emdash_task_id: input.emdashTaskId,
+          project_id: input.projectId,
+          conversation_id: input.conversationId,
+          session_id: input.sessionId,
+          provider: input.provider,
+          status: input.status,
+          observed_at: input.observedAt,
+        }),
+      },
+      (value) => value as { recorded: boolean }
     );
   }
 

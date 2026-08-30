@@ -70,6 +70,18 @@ export const orchestratorClaimedActionSchema = z.object({
 
 export const orchestratorActionCompletionSchema = z.object({ completed: z.boolean() });
 
+export const orchestratorWorkerTelemetryInputSchema = z.object({
+  executionId: z.string().min(1),
+  emdashTaskId: z.string().min(1),
+  projectId: z.string().min(1),
+  conversationId: z.string().nullable().optional(),
+  sessionId: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  status: z.string().min(1),
+  observedAt: z.string().min(1),
+});
+export const orchestratorWorkerTelemetryResultSchema = z.object({ recorded: z.boolean() });
+
 export const orchestratorActionProgressInputSchema = z.object({
   actionId: z.string().min(1),
   stage: z.string().min(1),
@@ -192,6 +204,9 @@ export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
 export type OrchestratorActionResolution = z.infer<typeof orchestratorActionResolutionSchema>;
 export type OrchestratorActionProgressInput = z.infer<typeof orchestratorActionProgressInputSchema>;
 export type OrchestratorWorkSessionAction = z.infer<typeof orchestratorWorkSessionActionSchema>;
+export type OrchestratorWorkerTelemetryInput = z.infer<
+  typeof orchestratorWorkerTelemetryInputSchema
+>;
 export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
 export type OrchestratorWorkContractInput = z.infer<typeof orchestratorWorkContractInputSchema>;
 export type OrchestratorWorkContract = z.infer<typeof orchestratorWorkContractSchema>;

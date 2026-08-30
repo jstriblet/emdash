@@ -59,6 +59,7 @@ describe('OrchestratorService', () => {
       pendingActions: vi.fn(),
       claimAction: vi.fn(),
       completeAction: vi.fn(),
+      reportWorkerTelemetry: vi.fn(),
       reportActionProgress: vi.fn(),
       workContracts: vi.fn(),
       createWorkContract: vi.fn(),

@@ -1,5 +1,6 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import type { OrchestratorEntry, OrchestratorHealth, OrchestratorWorkSessionAction } from '../api';
@@ -10,6 +11,7 @@ import {
   type OrchestratedWorkStage,
 } from './orchestrated-work-request';
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
+import { selectWorkerConversation } from './worker-telemetry';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
@@ -226,6 +228,46 @@ export function ThreadPanel() {
       window.clearInterval(timer);
     };
   }, [executeMcpAction]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const publishWorkerTelemetry = async () => {
+      try {
+        const client = await getOrchestratorClient();
+        const conversationsClient = await getConversationsClient();
+        const { workContracts } = await client.workContracts(undefined);
+        const executions = workContracts.flatMap((contract) => contract.executions);
+        await Promise.allSettled(
+          executions.map(async (execution) => {
+            const conversations = await conversationsClient.getConversationsForTask({
+              projectId: execution.project_id,
+              taskId: execution.emdash_task_id,
+            });
+            if (cancelled) return;
+            const conversation = selectWorkerConversation(conversations);
+            await client.reportWorkerTelemetry({
+              executionId: execution.execution_id,
+              emdashTaskId: execution.emdash_task_id,
+              projectId: execution.project_id,
+              conversationId: conversation?.id,
+              sessionId: conversation?.sessionId,
+              provider: conversation?.providerId ?? execution.agent,
+              status: conversation?.agentStatus ?? 'idle',
+              observedAt: new Date().toISOString(),
+            });
+          })
+        );
+      } catch {
+        // The regular health poll owns connection error presentation.
+      }
+    };
+    void publishWorkerTelemetry();
+    const timer = window.setInterval(() => void publishWorkerTelemetry(), REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (shouldFollowThreadRef.current) endRef.current?.scrollIntoView({ block: 'end' });
