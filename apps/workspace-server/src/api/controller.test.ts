@@ -25,6 +25,147 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
 
 describe('createWorkspaceWireController', () => {
+  it('pushes blocked and completed worker events to Orc and archives after acknowledgement', async () => {
+    const run = {
+      id: 'run-push',
+      seq: 1,
+      automationId: 'exec-push',
+      status: 'done' as const,
+      triggerKind: 'manual' as const,
+      configSnapshot: {
+        name: 'Orc push worker',
+        schedule: { expr: '0 0 1 1 *', tz: 'UTC' },
+        agent: {
+          type: 'tui' as const,
+          start: {
+            providerId: 'codex',
+            model: null,
+            initialPrompt: 'wait for input',
+            autoApprove: true,
+          },
+        },
+        workspace: {
+          kind: 'directory' as const,
+          path: {
+            host: { type: 'local' as const, id: 'local' },
+            path: { root: { kind: 'posix' as const }, segments: ['tmp', 'push-worker'] },
+          },
+        },
+      },
+      generatedName: 'orc-push-worker',
+      scheduledAt: null,
+      deadlineAt: null,
+      startedAt: 1,
+      finishedAt: 2,
+      workspace: null,
+      branchName: 'orc-push-worker',
+      conversationId: 'conversation-push',
+      sessionId: null,
+      error: null,
+    };
+    let state = {
+      conversationId: 'conversation-push',
+      providerId: 'codex',
+      status: 'working' as 'working' | 'awaiting-input' | 'completed',
+      updatedAt: 1,
+    };
+    let notify = () => {};
+    const source = {
+      snapshot: async () => ({
+        generation: 1,
+        sequence: 1,
+        timestamp: 1,
+        data: {
+          'conversation-push': state,
+        },
+      }),
+      attach: async () => () => {},
+      asLiveSource: () => ({
+        snapshot: async () => ({ data: { 'conversation-push': state } }),
+        subscribe: async (callback: () => void) => {
+          notify = callback;
+          return () => {};
+        },
+      }),
+    };
+    const runtimes = createTestRuntimeClients();
+    const automations = Object.assign(runtimes.automations, {
+      deploy: vi.fn(async () => ok({ deployment: {}, deployedAt: 1 })),
+      startRun: vi.fn(async () => ok({ run })),
+      listRuns: vi.fn(async () => ok({ runs: [run] })),
+    }) as unknown as ContractClient<AutomationsContract>;
+    const tuiAgents = Object.assign(runtimes.tuiAgents, {
+      agentStates: {
+        kind: 'liveModelClientHandle',
+        def: workspaceWireContract.tuiAgents.agentStates,
+        state: () => source,
+      },
+      output: {
+        kind: 'liveLogClientHandle',
+        def: workspaceWireContract.tuiAgents.output,
+        handle: () => ({
+          ...source,
+          snapshot: async () => ({
+            generation: 1,
+            sequence: 1,
+            timestamp: 1,
+            data: { baseOffset: 0, text: 'Need approval', truncated: false },
+          }),
+        }),
+      },
+      delete: vi.fn(async () => ok(undefined)),
+    }) as unknown as ContractClient<TuiAgentsContract>;
+    const conversations = Object.assign(runtimes.conversations, {
+      delete: vi.fn(async () => ok(undefined)),
+    });
+    const workspaceRegistry = Object.assign(runtimes.workspaceRegistry, {
+      deleteWorktree: vi.fn(async () => ok(undefined)),
+    });
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        requests.push({ url, body });
+        return {
+          ok: true,
+          json: async () => ({ action: body.status === 'completed' ? 'archive' : null }),
+        };
+      })
+    );
+    const controller = createTestWorkspaceWireController(
+      { automations, tuiAgents, conversations, workspaceRegistry },
+      { enableOrcCallbacks: true }
+    );
+
+    await controller.call('orchestration.launch', {
+      executionId: 'exec-push',
+      repositoryPath: '/home/user/src/bookscape',
+      worktreeRoot: '/home/user/worktrees',
+      baseBranch: 'main',
+      baseRemote: 'origin',
+      goal: 'wait for input',
+      provider: 'codex',
+      model: null,
+    });
+    state = { ...state, status: 'awaiting-input', updatedAt: 2 };
+    notify();
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.body.status).toBe('blocked');
+
+    state = { ...state, status: 'completed', updatedAt: 3 };
+    notify();
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    expect(requests[1]?.body.status).toBe('completed');
+    expect(requests[2]?.url).toContain('/workers/exec-push/archived');
+    expect(tuiAgents.delete).toHaveBeenCalledWith({ conversationId: 'conversation-push' });
+    expect(workspaceRegistry.deleteWorktree).toHaveBeenCalledWith({
+      workspaceId: 'run-push',
+      deleteBranch: true,
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('launches an Orc execution through the host automation runtime', async () => {
     const run = {
       id: 'run-1',

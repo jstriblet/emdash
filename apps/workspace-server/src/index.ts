@@ -65,6 +65,7 @@ async function serve(config: WorkspaceServerConfig, logger: Logger): Promise<Dis
       appVersion: config.appVersion,
       runtimes: runtimeHost.runtimes,
       hostDependencies: runtimeHost.hostDependencies,
+      enableOrcCallbacks: true,
     });
 
     if (config.serve.kind !== 'socket') {

@@ -19,6 +19,7 @@ export type WorkspaceWireControllerDeps = {
   appVersion?: string;
   daemonId?: string;
   startedAt?: number;
+  enableOrcCallbacks?: boolean;
 };
 
 const defaultStartedAt = Date.now();
@@ -27,6 +28,11 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
   const appVersion = deps.appVersion ?? '0.0.0';
   const daemonId = deps.daemonId ?? defaultDaemonId;
   const startedAt = deps.startedAt ?? defaultStartedAt;
+  const orcExecutions = new Map<
+    string,
+    { executionId: string; projectId: string; lastStatus?: string }
+  >();
+  const pendingOrcExecutions = new Map<string, string>();
 
   const findManualRun = async (executionId: string) => {
     const listed = await deps.runtimes.automations.listRuns({
@@ -75,6 +81,89 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       },
     });
   };
+
+  const archiveExecution = async (executionId: string) => {
+    const found = await findManualRun(executionId);
+    if (!found.success) return err(found.error);
+    const run = found.data;
+    if (!run) return ok(undefined);
+    const conversationId = run.conversationId;
+    if (conversationId) {
+      const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
+      if (!deleted.success) return orchestrationFailure(deleted.error);
+      const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
+      if (!conversationDeleted.success) return orchestrationFailure(conversationDeleted.error);
+    }
+    const workspaceDeleted = await deps.runtimes.workspaceRegistry.deleteWorktree({
+      workspaceId: run.id,
+      deleteBranch: true,
+    });
+    return workspaceDeleted.success ? ok(undefined) : orchestrationFailure(workspaceDeleted.error);
+  };
+
+  const publishOrcTransitions = async () => {
+    for (const [executionId, projectId] of pendingOrcExecutions) {
+      const found = await findManualRun(executionId);
+      if (!found.success || !found.data?.conversationId) continue;
+      orcExecutions.set(found.data.conversationId, { executionId, projectId });
+      pendingOrcExecutions.delete(executionId);
+    }
+    const states = await deps.runtimes.tuiAgents.agentStates.state(undefined, 'list').snapshot();
+    for (const [conversationId, execution] of orcExecutions) {
+      const state = states.data[conversationId];
+      if (!state || state.status === execution.lastStatus) continue;
+      execution.lastStatus = state.status;
+      if (!['awaiting-input', 'completed', 'error'].includes(state.status)) continue;
+      const output = await deps.runtimes.tuiAgents.output.handle({ conversationId }).snapshot();
+      const status =
+        state.status === 'awaiting-input'
+          ? 'blocked'
+          : state.status === 'error'
+            ? 'failed'
+            : 'completed';
+      const response = await fetch(
+        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            emdash_task_id: execution.executionId,
+            project_id: execution.projectId,
+            conversation_id: conversationId,
+            provider: state.providerId,
+            status,
+            notification_type: state.notificationType,
+            prompt_excerpt:
+              state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000),
+            observed_at: new Date().toISOString(),
+          }),
+        }
+      );
+      if (!response.ok || status !== 'completed') continue;
+      const directive = (await response.json()) as { action?: string };
+      if (directive.action !== 'archive') continue;
+      const archived = await archiveExecution(execution.executionId);
+      await fetch(
+        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/archived`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            success: archived.success,
+            detail: archived.success ? null : archived.error.message,
+          }),
+        }
+      );
+      if (archived.success) orcExecutions.delete(conversationId);
+    }
+  };
+
+  if (deps.enableOrcCallbacks) {
+    const agentStateSource = deps.runtimes.tuiAgents.agentStates
+      .state(undefined, 'list')
+      .asLiveSource();
+    void agentStateSource.subscribe(() => void publishOrcTransitions());
+  }
 
   return createController(workspaceWireContract, {
     health: () => ({
@@ -175,7 +264,16 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         const started = await deps.runtimes.automations.startRun({
           automationId: input.executionId,
         });
-        return started.success ? ok(started.data.run) : orchestrationFailure(started.error);
+        if (!started.success) return orchestrationFailure(started.error);
+        if (started.data.run.conversationId) {
+          orcExecutions.set(started.data.run.conversationId, {
+            executionId: input.executionId,
+            projectId: input.repositoryPath,
+          });
+        } else {
+          pendingOrcExecutions.set(input.executionId, input.repositoryPath);
+        }
+        return ok(started.data.run);
       },
       get: async ({ executionId }) => {
         return findManualRun(executionId);
@@ -198,26 +296,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           ? ok(inspected.data)
           : orchestrationFailure(new Error('Worker execution disappeared'));
       },
-      archive: async ({ executionId }) => {
-        const found = await findManualRun(executionId);
-        if (!found.success) return err(found.error);
-        const run = found.data;
-        if (!run) return ok(undefined);
-        const conversationId = run.conversationId;
-        if (conversationId) {
-          const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
-          if (!deleted.success) return orchestrationFailure(deleted.error);
-          const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
-          if (!conversationDeleted.success) return orchestrationFailure(conversationDeleted.error);
-        }
-        const workspaceDeleted = await deps.runtimes.workspaceRegistry.deleteWorktree({
-          workspaceId: run.id,
-          deleteBranch: true,
-        });
-        return workspaceDeleted.success
-          ? ok(undefined)
-          : orchestrationFailure(workspaceDeleted.error);
-      },
+      archive: async ({ executionId }) => archiveExecution(executionId),
       cancel: async ({ executionId }) => {
         const listed = await deps.runtimes.automations.listRuns({
           automationId: executionId,
