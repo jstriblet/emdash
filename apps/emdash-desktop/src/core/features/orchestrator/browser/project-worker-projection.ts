@@ -2,6 +2,7 @@ import { hostRef } from '@emdash/core/primitives/host/api';
 import { runInAction } from 'mobx';
 import { useEffect } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
+import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
@@ -15,6 +16,7 @@ import { getOrchestratorClient } from '../api/browser/client';
 const projectionAttempts = new Set<string>();
 const projectCreationAttempts = new Set<string>();
 const linkedConversations = new Set<string>();
+const openedConversations = new Set<string>();
 const REFRESH_INTERVAL_MS = 2_000;
 
 function normalizedHost(value: string): string {
@@ -192,14 +194,21 @@ export async function projectOrcWorkersIntoTasks(
           projectId: project.id,
           taskId: contract.task_id,
         });
-        const taskView = getTaskComposition(project.id, contract.task_id);
-        taskView?.paneLayout.open(
-          'conversation',
-          { conversationId: execution.session_id },
-          { preview: false }
-        );
-        taskView?.setFocusedRegion('main');
         linkedConversations.add(execution.session_id);
+      }
+      if (execution.session_id && !openedConversations.has(execution.session_id)) {
+        const conversationManager = getConversationsForTask(contract.task_id);
+        const conversation = conversationManager?.conversations.get(execution.session_id);
+        const taskView = getTaskComposition(project.id, contract.task_id);
+        if (conversation && taskView) {
+          taskView.paneLayout.open(
+            'conversation',
+            { conversationId: execution.session_id },
+            { preview: false }
+          );
+          taskView.setFocusedRegion('main');
+          openedConversations.add(execution.session_id);
+        }
       }
     } catch (error) {
       log.warn('Unable to project Orc worker into the project rail yet', {
