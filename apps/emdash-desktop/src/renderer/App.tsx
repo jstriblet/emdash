@@ -117,7 +117,7 @@ function AppContent() {
                     <AppShutdownLifecycle />
                     <HostRecoveryWakeups />
                     <div hidden>
-                      <ThreadPanel />
+                      <ThreadPanel backgroundRuntime />
                     </div>
                     {renderContent()}
                   </ThemeProvider>

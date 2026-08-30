@@ -108,7 +108,7 @@ function activityDetail(detail: string): { hidden: number; lines: string[] } {
   return { hidden: Math.max(0, lines.length - 8), lines: lines.slice(-8) };
 }
 
-export function ThreadPanel() {
+export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?: boolean } = {}) {
   const { navigate } = useNavigate();
   const [entries, setEntries] = useState<OrchestratorEntry[]>([]);
   const [health, setHealth] = useState<OrchestratorHealth>();
@@ -125,6 +125,7 @@ export function ThreadPanel() {
   const shouldFollowThreadRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
   const activeMcpActionIdsRef = useRef(new Set<string>());
+  const actionInFlightRef = useRef(false);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
     for (const entry of [...entries].reverse()) {
@@ -309,11 +310,18 @@ export function ThreadPanel() {
   );
 
   useEffect(() => {
+    if (!backgroundRuntime) return;
     let cancelled = false;
     const poll = async () => {
+      if (actionInFlightRef.current) return;
       try {
         const { action } = await (await getOrchestratorClient()).claimAction(undefined);
-        if (!cancelled && action) void executeMcpAction(action);
+        if (!cancelled && action) {
+          actionInFlightRef.current = true;
+          void executeMcpAction(action).finally(() => {
+            actionInFlightRef.current = false;
+          });
+        }
       } catch {
         // Connection errors are already represented by the Thread panel health state.
       }
@@ -324,9 +332,10 @@ export function ThreadPanel() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [executeMcpAction]);
+  }, [backgroundRuntime, executeMcpAction]);
 
   useEffect(() => {
+    if (!backgroundRuntime) return;
     let cancelled = false;
     const publishWorkerTelemetry = async () => {
       try {
@@ -405,7 +414,7 @@ export function ThreadPanel() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [backgroundRuntime]);
 
   useEffect(() => {
     if (shouldFollowThreadRef.current) endRef.current?.scrollIntoView({ block: 'end' });
