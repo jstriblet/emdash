@@ -86,6 +86,8 @@ export function ThreadPanel() {
   const [contractProcedure, setContractProcedure] = useState('');
   const [contractExpected, setContractExpected] = useState('');
   const [changingContract, setChangingContract] = useState(false);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const shouldFollowThreadRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
@@ -146,13 +148,14 @@ export function ThreadPanel() {
   }, [refresh]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    if (shouldFollowThreadRef.current) endRef.current?.scrollIntoView({ block: 'end' });
   }, [entries]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
     if (!text || sending) return;
+    shouldFollowThreadRef.current = true;
     setSending(true);
     setDraft('');
     setError(undefined);
@@ -331,7 +334,15 @@ export function ThreadPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#111417] font-mono text-[#e8e4dd]">
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 text-[13px] leading-6 sm:px-8">
+      <div
+        ref={scrollViewportRef}
+        onScroll={(event) => {
+          const viewport = event.currentTarget;
+          shouldFollowThreadRef.current =
+            viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-5 text-[13px] leading-6 sm:px-8"
+      >
         {error && entries.length === 0 ? (
           <div className="text-[#817d77]">
             <p>
@@ -375,7 +386,10 @@ export function ThreadPanel() {
                 Tip: type /help for commands and shortcuts.
               </p>
             </div>
-            <section className="mb-8 border-y border-[#383633] py-3" aria-label="Work Contracts">
+            <section
+              className="sticky top-0 z-10 mb-8 border-y border-[#383633] bg-[#111417]/95 py-3 backdrop-blur"
+              aria-label="Work Contracts"
+            >
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-[#8f8a83]">work contracts</span>
                 <button
