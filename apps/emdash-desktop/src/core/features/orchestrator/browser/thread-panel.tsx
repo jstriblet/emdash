@@ -9,6 +9,7 @@ import {
   parseOrchestratedWorkRequest,
   type OrchestratedWorkStage,
 } from './orchestrated-work-request';
+import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
@@ -134,11 +135,33 @@ export function ThreadPanel() {
   }, []);
 
   useEffect(() => {
-    void getMachinesClient()
-      .then((client) => client.getMachines(undefined))
-      .then((saved) => setMachines(saved.map(({ id, name }) => ({ id, name }))))
-      .catch(() => setMachines([]));
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const saved = await (await getMachinesClient()).getMachines(undefined);
+        if (cancelled) return;
+        setMachines(saved.map(({ id, name }) => ({ id, name })));
+        const client = await getOrchestratorClient();
+        if (cancelled) return;
+        if (saved.length === 1) {
+          setConnecting(true);
+          try {
+            const reconnected = await restoreOrchestratorConnection(client, saved);
+            if (reconnected && !cancelled) await refresh();
+          } finally {
+            if (!cancelled) setConnecting(false);
+          }
+        }
+      } catch (cause) {
+        if (cancelled) return;
+        setMachines([]);
+        setError(cause instanceof Error ? cause.message : 'Unable to reconnect to Orc');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
 
   useEffect(() => {
     void refresh();
