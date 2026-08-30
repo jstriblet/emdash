@@ -148,14 +148,50 @@ export async function projectOrcWorkersIntoTasks(
       continue;
     }
 
+    await reportProjectionStage(
+      execution.execution_id,
+      'Desktop projection discovery',
+      'completed',
+      contract.task_id
+    );
+
     const project = await findOrCreateProject(execution.project_id, execution.host_id);
-    if (!project?.data || project.data.type !== 'ssh' || projectionAttempts.has(contract.task_id)) {
+    if (!project?.data || project.data.type !== 'ssh') {
+      await reportProjectionStage(
+        execution.execution_id,
+        'Desktop project resolution',
+        'failed',
+        `${execution.host_id}:${execution.project_id}`
+      );
+      continue;
+    }
+    await reportProjectionStage(
+      execution.execution_id,
+      'Desktop project resolution',
+      'completed',
+      project.id
+    );
+    if (projectionAttempts.has(contract.task_id)) {
       continue;
     }
     const connectionId = project.data.connectionId;
 
     const taskManager = getTaskManagerStore(project.id);
-    if (!taskManager) continue;
+    if (!taskManager) {
+      await reportProjectionStage(
+        execution.execution_id,
+        'Desktop task manager resolution',
+        'failed',
+        project.id
+      );
+      continue;
+    }
+    await reportProjectionStage(
+      execution.execution_id,
+      'Desktop task manager resolution',
+      'completed',
+      project.id
+    );
 
     projectionAttempts.add(contract.task_id);
     try {
