@@ -1,13 +1,15 @@
-import { useEffect } from 'react';
+import { hostRef } from '@emdash/core/primitives/host/api';
 import { runInAction } from 'mobx';
-import type { OrchestratorWorkContract } from '../api';
-import { getOrchestratorClient } from '../api/browser/client';
+import { useEffect } from 'react';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
+import { getWorkspaceRegistryWireClient } from '@core/features/workspaces/api/browser/client';
 import { log } from '@core/primitives/logging/browser/logger';
+import type { OrchestratorWorkContract } from '../api';
+import { getOrchestratorClient } from '../api/browser/client';
 
 const projectionAttempts = new Set<string>();
 const projectCreationAttempts = new Set<string>();
@@ -107,15 +109,15 @@ export async function projectOrcWorkersIntoTasks(
     // Completed workers have already been verified and archived on the host. Their
     // workspace records may no longer exist, so replaying them into a fresh desktop
     // would create a task that can never resolve its selected workspace.
-    if (
-      !execution?.worktree_path ||
-      isTerminal(contract)
-    ) {
+    if (!execution?.worktree_path || isTerminal(contract)) {
       continue;
     }
 
     const project = await findOrCreateProject(execution.project_id, execution.host_id);
-    if (!project?.data || projectionAttempts.has(contract.task_id)) continue;
+    if (!project?.data || project.data.type !== 'ssh' || projectionAttempts.has(contract.task_id)) {
+      continue;
+    }
+    const connectionId = project.data.connectionId;
 
     const taskManager = getTaskManagerStore(project.id);
     if (!taskManager) continue;
@@ -124,6 +126,21 @@ export async function projectOrcWorkersIntoTasks(
     try {
       let task = taskManager.tasks.get(contract.task_id);
       if (!task) {
+        const workspace = await (
+          await getWorkspaceRegistryWireClient()
+        ).createWorkspace({
+          host: hostRef('remote', connectionId),
+          path: execution.worktree_path,
+        });
+        if (!workspace.success) {
+          log.debug('Orc workspace could not be claimed by the desktop', {
+            taskId: contract.task_id,
+            workspacePath: execution.worktree_path,
+            error: workspace.error,
+          });
+          continue;
+        }
+
         const created = await (
           await getTasksWireClient()
         ).createTask({
@@ -139,7 +156,7 @@ export async function projectOrcWorkersIntoTasks(
             git: { kind: 'none' },
             workspace: {
               kind: 'repository-instance',
-              workspaceId: execution.emdash_task_id,
+              workspaceId: workspace.data.id,
             },
           },
         });
