@@ -254,7 +254,11 @@ export async function projectOrcWorkersIntoTasks(
       }
       if (execution.session_id && !openedConversations.has(execution.session_id)) {
         const conversationManager = getConversationsForTask(contract.task_id);
-        const conversation = conversationManager?.conversations.get(execution.session_id);
+        let conversation = conversationManager?.conversations.get(execution.session_id);
+        if (conversationManager && !conversation) {
+          await conversationManager.list.load();
+          conversation = conversationManager.conversations.get(execution.session_id);
+        }
         const taskView = getTaskComposition(project.id, contract.task_id);
         if (conversation && taskView) {
           taskView.paneLayout.open(
