@@ -186,14 +186,15 @@ export async function projectOrcWorkersIntoTasks(
 
       if (execution.session_id && !linkedConversations.has(execution.session_id)) {
         const conversations = await getConversationsClient();
-        await conversations.refreshHostConversations({
+        const adopted = await conversations.adoptHostConversation({
           host: hostRef('remote', connectionId),
-        });
-        await conversations.linkConversationToTask({
           conversationId: execution.session_id,
           projectId: project.id,
           taskId: contract.task_id,
         });
+        if (!adopted) {
+          throw new Error(`Host conversation ${execution.session_id} was not found`);
+        }
         linkedConversations.add(execution.session_id);
       }
       if (execution.session_id && !openedConversations.has(execution.session_id)) {

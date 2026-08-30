@@ -219,9 +219,14 @@ export const conversationsContract = defineContract({
     }),
     output: z.custom<HostConversationRow[]>(),
   }),
-  refreshHostConversations: procedure({
-    input: z.object({ host: hostRefSchema }),
-    output: z.void(),
+  adoptHostConversation: procedure({
+    input: z.object({
+      host: hostRefSchema,
+      conversationId: z.string().min(1),
+      projectId: z.string().min(1),
+      taskId: z.string().min(1),
+    }),
+    output: z.boolean(),
   }),
   linkConversationToTask: procedure({
     input: z.object({ conversationId: z.string(), projectId: z.string(), taskId: z.string() }),
