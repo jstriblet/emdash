@@ -59,6 +59,12 @@ jobs:
           node --experimental-strip-types scripts/release/rebuild-native.ts
           --arch arm64
 
+      - name: Verify native modules under Electron
+        working-directory: apps/emdash-desktop
+        run: >-
+          ELECTRON_RUN_AS_NODE=1 pnpm exec electron -e
+          "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();"
+
       - name: Build signed Emdash Orc DMG and updater ZIP
         working-directory: apps/emdash-desktop
         env:
@@ -82,6 +88,8 @@ jobs:
         run: |
           codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Emdash Orc.app"
           spctl --assess --type execute --verbose=2 "release/mac-arm64/Emdash Orc.app"
+          ELECTRON_RUN_AS_NODE=1 pnpm exec electron -e \
+            "const Database = require('./release/mac-arm64/Emdash Orc.app/Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3'); const db = new Database(':memory:'); db.close();"
 
       - name: Publish GitHub prerelease
         working-directory: apps/emdash-desktop

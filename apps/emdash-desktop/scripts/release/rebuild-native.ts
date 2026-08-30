@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { cwd } from 'node:process';
 import { parseArgs } from 'node:util';
 import { rebuild } from '@electron/rebuild';
@@ -20,12 +21,14 @@ if (!arch || !['arm64', 'x64'].includes(arch)) {
 
 const deployDir = values['deploy-dir'];
 const buildPath = deployDir ?? cwd();
+const projectRootPath = deployDir ? buildPath : resolve(buildPath, '..', '..');
 
 const electronVersion = exec('node -p "require(\'electron/package.json\').version"');
 step(`Rebuilding native modules for ${arch} (Electron ${electronVersion})`);
 
 await rebuild({
   buildPath,
+  projectRootPath,
   electronVersion,
   arch,
   onlyModules: NATIVE_MODULES,
