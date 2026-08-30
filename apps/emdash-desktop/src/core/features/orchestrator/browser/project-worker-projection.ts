@@ -5,6 +5,7 @@ import { getOrchestratorClient } from '../api/browser/client';
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
+import { getTasksWireClient } from '@core/features/tasks/api/browser/client';
 import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { log } from '@core/primitives/logging/browser/logger';
 
@@ -120,12 +121,12 @@ export async function projectOrcWorkersIntoTasks(
     if (!taskManager) continue;
 
     projectionAttempts.add(contract.task_id);
-    let createdHere = false;
     try {
       let task = taskManager.tasks.get(contract.task_id);
       if (!task) {
-        createdHere = true;
-        await taskManager.createTask({
+        const created = await (
+          await getTasksWireClient()
+        ).createTask({
           id: contract.task_id,
           projectId: project.id,
           taskConfig: {
@@ -142,6 +143,14 @@ export async function projectOrcWorkersIntoTasks(
             },
           },
         });
+        if (!created.success) {
+          log.debug('Orc workspace is not ready for project-rail projection', {
+            taskId: contract.task_id,
+            projectPath: execution.project_id,
+            error: created.error,
+          });
+          continue;
+        }
         task = taskManager.tasks.get(contract.task_id);
       }
 
@@ -159,9 +168,6 @@ export async function projectOrcWorkersIntoTasks(
         linkedConversations.add(execution.session_id);
       }
     } catch (error) {
-      if (createdHere && taskManager.tasks.get(contract.task_id)?.state === 'unregistered') {
-        runInAction(() => taskManager.tasks.delete(contract.task_id));
-      }
       log.warn('Unable to project Orc worker into the project rail yet', {
         taskId: contract.task_id,
         projectPath: execution.project_id,
