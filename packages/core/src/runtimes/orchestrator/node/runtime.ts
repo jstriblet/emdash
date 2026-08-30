@@ -6,6 +6,7 @@ import {
   orchestratorWorkContractSchema,
   orchestratorThreadSchema,
   type OrchestratorActionResolution,
+  type OrchestratorActionProgressInput,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorReply,
@@ -64,6 +65,23 @@ export class OrchestratorRuntime {
         body: JSON.stringify({ surface: 'emdash', text }),
       },
       orchestratorActionResolutionSchema.parse
+    );
+  }
+
+  reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }> {
+    return this.#request(
+      `/actions/${encodeURIComponent(input.actionId)}/progress`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          surface: 'emdash',
+          stage: input.stage,
+          status: input.status,
+          detail: input.detail,
+        }),
+      },
+      (value) => value as { recorded: boolean }
     );
   }
 

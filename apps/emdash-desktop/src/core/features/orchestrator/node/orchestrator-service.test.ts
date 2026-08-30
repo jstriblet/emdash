@@ -56,6 +56,7 @@ describe('OrchestratorService', () => {
       thread: vi.fn(),
       send: vi.fn(),
       resolveAction: vi.fn(),
+      reportActionProgress: vi.fn(),
       workContracts: vi.fn(),
       createWorkContract: vi.fn(),
       updateWorkContract: vi.fn(),

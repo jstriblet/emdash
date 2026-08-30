@@ -171,7 +171,16 @@ export function ThreadPanel() {
           }
         : parseOrchestratedWorkRequest(text);
       if (workRequest) {
-        await createOrchestratedWorkSession(workRequest, navigate, setWorkStage);
+        const actionId = resolution.action?.action_id;
+        await createOrchestratedWorkSession(
+          workRequest,
+          navigate,
+          async (stage, status, detail) => {
+            if (status === 'started') setWorkStage(stage);
+            if (!actionId) return;
+            await client.reportActionProgress({ actionId, stage, status, detail });
+          }
+        );
         await refresh();
         return;
       }

@@ -65,7 +65,8 @@ describe('runStage', () => {
     await expect(
       runStage('Locating the repository', Promise.resolve('/repo'), report)
     ).resolves.toBe('/repo');
-    expect(report).toHaveBeenCalledWith('Locating the repository');
+    expect(report).toHaveBeenNthCalledWith(1, 'Locating the repository', 'started', undefined);
+    expect(report).toHaveBeenNthCalledWith(2, 'Locating the repository', 'completed', undefined);
   });
 
   it('identifies a stage that times out', async () => {

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   OrchestratorActionResolution,
+  OrchestratorActionProgressInput,
   OrchestratorHealth,
   OrchestratorExecutionLinkInput,
   OrchestratorForkUpdate,
@@ -32,6 +33,7 @@ export type OrchestratorRuntimeClient = {
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
+  reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
   updateWorkContract(
@@ -157,6 +159,10 @@ export class OrchestratorService {
 
   resolveAction(text: string): Promise<OrchestratorActionResolution> {
     return this.runtime.resolveAction(text);
+  }
+
+  reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }> {
+    return this.runtime.reportActionProgress(input);
   }
 
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }> {

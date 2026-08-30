@@ -92,6 +92,34 @@ describe('OrchestratorRuntime', () => {
     );
   });
 
+  it('reports Emdash action progress to Orc', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(Response.json({ recorded: true }));
+    const runtime = new OrchestratorRuntime({ baseUrl: 'http://orc.test', fetch });
+
+    await expect(
+      runtime.reportActionProgress({
+        actionId: 'action-1',
+        stage: 'Connecting to the project host',
+        status: 'failed',
+        detail: 'SSH resolution failed',
+      })
+    ).resolves.toEqual({ recorded: true });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://orc.test/actions/action-1/progress',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          surface: 'emdash',
+          stage: 'Connecting to the project host',
+          status: 'failed',
+          detail: 'SSH resolution failed',
+        }),
+      })
+    );
+  });
+
   it('lists work contracts from the Orc response envelope', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

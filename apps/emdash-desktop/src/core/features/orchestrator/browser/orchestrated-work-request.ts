@@ -24,7 +24,11 @@ export type OrchestratedWorkStage =
   | 'Launching the agent'
   | 'Recording the execution';
 
-type ProgressReporter = (stage: OrchestratedWorkStage) => void;
+type ProgressReporter = (
+  stage: OrchestratedWorkStage,
+  status: 'started' | 'completed' | 'failed',
+  detail?: string
+) => void | Promise<void>;
 
 const STAGE_TIMEOUT_MS = 45_000;
 
@@ -198,10 +202,13 @@ export async function runStage<T>(
   onProgress: ProgressReporter = () => {},
   timeoutMs = STAGE_TIMEOUT_MS
 ): Promise<T> {
-  onProgress(stage);
+  const report = async (status: 'started' | 'completed' | 'failed', detail?: string) => {
+    await Promise.resolve(onProgress(stage, status, detail)).catch(() => {});
+  };
+  await report('started');
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([
+    const result = await Promise.race([
       operation,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
@@ -209,8 +216,11 @@ export async function runStage<T>(
         }, timeoutMs);
       }),
     ]);
+    await report('completed');
+    return result;
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Unknown error';
+    await report('failed', message);
     if (message.startsWith(stage)) throw cause;
     throw new Error(`${stage} failed: ${message}`);
   } finally {
@@ -233,7 +243,10 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
     return { type: 'ssh', connectionId: connection.id };
   }
 
-  const sshConfigHost = findSshConfigHost(await machines.getSshConfigHosts(), hostName);
+  const configuredHosts = await machines.getSshConfigHosts();
+  const sshConfigHost =
+    findSshConfigHost(configuredHosts, hostName) ??
+    (await machines.getSshConfigHost(hostName.trim()).catch(() => undefined));
   if (!sshConfigHost) {
     throw new Error(`Orc could not find “${hostName}” in Emdash Machines or this Mac’s SSH config`);
   }

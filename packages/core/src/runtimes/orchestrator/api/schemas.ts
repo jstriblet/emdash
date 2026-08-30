@@ -60,6 +60,15 @@ export const orchestratorActionResolutionSchema = z.object({
   action: orchestratorWorkSessionActionSchema.nullable(),
 });
 
+export const orchestratorActionProgressInputSchema = z.object({
+  actionId: z.string().min(1),
+  stage: z.string().min(1),
+  status: z.enum(['started', 'completed', 'failed']),
+  detail: z.string().optional(),
+});
+
+export const orchestratorActionProgressResultSchema = z.object({ recorded: z.boolean() });
+
 export const orchestratorForkUpdateSchema = z.object({
   updated: z.boolean(),
   message: z.string(),
@@ -171,6 +180,7 @@ export type OrchestratorHealth = z.infer<typeof orchestratorHealthSchema>;
 export type OrchestratorThread = z.infer<typeof orchestratorThreadSchema>;
 export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
 export type OrchestratorActionResolution = z.infer<typeof orchestratorActionResolutionSchema>;
+export type OrchestratorActionProgressInput = z.infer<typeof orchestratorActionProgressInputSchema>;
 export type OrchestratorWorkSessionAction = z.infer<typeof orchestratorWorkSessionActionSchema>;
 export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
 export type OrchestratorWorkContractInput = z.infer<typeof orchestratorWorkContractInputSchema>;

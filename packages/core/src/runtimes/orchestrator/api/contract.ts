@@ -2,6 +2,8 @@ import { defineContract, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
 import {
   orchestratorActionResolutionSchema,
+  orchestratorActionProgressInputSchema,
+  orchestratorActionProgressResultSchema,
   orchestratorExecutionLinkInputSchema,
   orchestratorHealthSchema,
   orchestratorForkUpdateSchema,
@@ -33,6 +35,10 @@ export const orchestratorContract = defineContract({
   resolveAction: procedure({
     input: z.object({ text: z.string().trim().min(1) }),
     output: orchestratorActionResolutionSchema,
+  }),
+  reportActionProgress: procedure({
+    input: orchestratorActionProgressInputSchema,
+    output: orchestratorActionProgressResultSchema,
   }),
   workContracts: procedure({
     input: z.void(),

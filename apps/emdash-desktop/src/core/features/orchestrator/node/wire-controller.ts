@@ -1,6 +1,7 @@
 import {
   orchestratorContract,
   type OrchestratorActionResolution,
+  type OrchestratorActionProgressInput,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorForkUpdate,
@@ -20,6 +21,7 @@ export type OrchestratorRuntimePort = {
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
+  reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
   createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
   updateWorkContract(
@@ -41,6 +43,7 @@ export function createOrchestratorWireController(runtime: OrchestratorRuntimePor
     thread: ({ limit }) => runtime.thread(limit),
     send: ({ text }) => runtime.send(text),
     resolveAction: ({ text }) => runtime.resolveAction(text),
+    reportActionProgress: (input) => runtime.reportActionProgress(input),
     workContracts: () => runtime.workContracts(),
     createWorkContract: (contract) => runtime.createWorkContract(contract),
     updateWorkContract: ({ contractId, update }) => runtime.updateWorkContract(contractId, update),
