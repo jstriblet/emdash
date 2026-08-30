@@ -164,6 +164,24 @@ describe('workspace registry contract', () => {
     expect(subCreated).toMatchObject({ success: true, data: { kind: 'directory' } });
   });
 
+  it('promotes a registered directory after it becomes a repository', async () => {
+    const projectPath = path.join(root, 'new-project');
+    await fs.mkdir(projectPath);
+    await expect(
+      wire.client.createWorkspace({ workspaceId: 'ws-new-project', path: projectPath })
+    ).resolves.toMatchObject({ success: true, data: { kind: 'directory' } });
+
+    git(projectPath, 'init', '--initial-branch=main');
+    git(projectPath, 'commit', '--allow-empty', '-m', 'initial');
+
+    await expect(
+      wire.client.createWorkspace({ workspaceId: 'another-id', path: projectPath })
+    ).resolves.toMatchObject({
+      success: true,
+      data: { id: 'ws-new-project', kind: 'repository', path: projectPath },
+    });
+  });
+
   it('persists personal config and legacy imports for directory project roots', async () => {
     const directoryPath = path.join(root, 'plain-directory-config');
     await fs.mkdir(directoryPath);

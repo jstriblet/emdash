@@ -994,7 +994,7 @@ export class WorkspaceRegistryRuntime {
     if (existing) {
       if (existing.path === canonical) {
         // Idempotent replay: same id, same path — no-op success.
-        return ok(this.toWire(existing));
+        return ok(this.toWire(await this.promoteDirectoryRepository(existing)));
       }
       return err({
         type: 'immutable-field-mismatch',
@@ -1006,7 +1006,7 @@ export class WorkspaceRegistryRuntime {
     const byPath = this.store.getByPath(canonical);
     if (byPath) {
       // The Host owns path identity: a second desktop consumes the canonical record.
-      return ok(this.toWire(byPath));
+      return ok(this.toWire(await this.promoteDirectoryRepository(byPath)));
     }
 
     const inspection = await this.inspector(canonical);
@@ -1044,6 +1044,32 @@ export class WorkspaceRegistryRuntime {
     this.store.insert(record);
     this.publish(record);
     return ok(this.toWire(record));
+  }
+
+  /**
+   * A directory may become a repository after registration (notably when Orc creates a new
+   * project). Refresh that one-way classification before returning the canonical record so an
+   * immediately following createWorktree does not reject the still-cached directory kind.
+   */
+  private async promoteDirectoryRepository(
+    record: DurableWorkspaceRecord
+  ): Promise<DurableWorkspaceRecord> {
+    if (record.kind !== 'directory') return record;
+    const inspection = await this.inspector(record.path);
+    if (inspection.kind !== 'repository') return record;
+    const now = this.clock.now();
+    const promoted: DurableWorkspaceRecord = {
+      ...record,
+      kind: 'repository',
+      parentId: null,
+      gitAdminName: null,
+      observedStatus: 'present',
+      updatedAt: now,
+      lastObservedAt: now,
+    };
+    this.store.update(promoted);
+    this.publish(promoted);
+    return promoted;
   }
 
   /** Late-bound because the scheduler needs the runtime before it can be pointed at. */
