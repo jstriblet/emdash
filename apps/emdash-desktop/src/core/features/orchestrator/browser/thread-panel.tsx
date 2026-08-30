@@ -212,8 +212,8 @@ export function ThreadPanel() {
           const manager = getConversationsForTask(action.emdash_task_id);
           const session = manager?.sessions.get(action.conversation_id);
           if (!manager || !session) throw new Error('Worker conversation is not available');
-          await manager.killSession(action.conversation_id);
-          session.dispose();
+          await manager.dehydrateConversation(action.conversation_id);
+          await manager.hydrateConversation(action.conversation_id);
           await session.connect();
           await client.completeAction({ actionId: action.action_id });
           await refresh();
