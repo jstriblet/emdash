@@ -462,6 +462,29 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     }
   }
 
+  async function interrupt() {
+    try {
+      await (await getOrchestratorClient()).interrupt(undefined);
+      submittedTurnInFlightRef.current = false;
+      setSending(false);
+      setWorkStage(undefined);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to stop Orc');
+    }
+  }
+
+  useEffect(() => {
+    if (!sending && !health?.busy) return;
+    const stopOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat) return;
+      event.preventDefault();
+      void interrupt();
+    };
+    window.addEventListener('keydown', stopOnEscape);
+    return () => window.removeEventListener('keydown', stopOnEscape);
+  });
+
   async function connect(connectionId: string) {
     setConnecting(true);
     setError(undefined);
@@ -630,7 +653,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
             {(sending || health?.busy) && (
               <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
                 <span>•</span>
-                <span>{workStage ? `${workStage}…` : 'Working…'}</span>
+                <span>{workStage ? `${workStage}…` : 'Working… (Esc to stop)'}</span>
               </div>
             )}
             <div ref={endRef} />

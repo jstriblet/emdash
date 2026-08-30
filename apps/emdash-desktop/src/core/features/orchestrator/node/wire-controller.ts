@@ -22,6 +22,7 @@ export type OrchestratorRuntimePort = {
   health(): Promise<OrchestratorHealth>;
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
+  interrupt(): Promise<{ interrupted: number }>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
   pendingActions(): Promise<{ actions: OrchestratorPendingAction[] }>;
   claimAction(): Promise<{ action: OrchestratorPendingAction | null }>;
@@ -48,6 +49,7 @@ export function createOrchestratorWireController(runtime: OrchestratorRuntimePor
     health: () => runtime.health(),
     thread: ({ limit }) => runtime.thread(limit),
     send: ({ text }) => runtime.send(text),
+    interrupt: () => runtime.interrupt(),
     resolveAction: ({ text }) => runtime.resolveAction(text),
     pendingActions: () => runtime.pendingActions(),
     claimAction: () => runtime.claimAction(),

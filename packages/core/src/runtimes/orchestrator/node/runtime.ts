@@ -60,6 +60,12 @@ export class OrchestratorRuntime {
     );
   }
 
+  interrupt(): Promise<{ interrupted: number }> {
+    return this.#request('/interrupt', { method: 'POST' }, (value) =>
+      z.object({ interrupted: z.number().int().nonnegative() }).parse(value)
+    );
+  }
+
   resolveAction(text: string): Promise<OrchestratorActionResolution> {
     return this.#request(
       '/actions/resolve',

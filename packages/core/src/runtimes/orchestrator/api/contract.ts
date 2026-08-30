@@ -37,6 +37,10 @@ export const orchestratorContract = defineContract({
     input: z.object({ text: z.string().trim().min(1) }),
     output: orchestratorReplySchema,
   }),
+  interrupt: procedure({
+    input: z.void(),
+    output: z.object({ interrupted: z.number().int().nonnegative() }),
+  }),
   resolveAction: procedure({
     input: z.object({ text: z.string().trim().min(1) }),
     output: orchestratorActionResolutionSchema,

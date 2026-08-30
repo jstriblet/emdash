@@ -69,6 +69,19 @@ describe('OrchestratorRuntime', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ surface: 'emdash', text: 'hello' });
   });
 
+  it('interrupts the active Orc turn', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(Response.json({ interrupted: 1 }));
+    const runtime = new OrchestratorRuntime({ baseUrl: 'http://orc.test', fetch });
+
+    await expect(runtime.interrupt()).resolves.toEqual({ interrupted: 1 });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://orc.test/interrupt',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
   it('resolves typed work-session actions without entering the chat loop', async () => {
     const action = {
       kind: 'create_work_session',

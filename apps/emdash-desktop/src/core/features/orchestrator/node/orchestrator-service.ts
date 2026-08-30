@@ -34,6 +34,7 @@ export type OrchestratorRuntimeClient = {
   health(): Promise<OrchestratorHealth>;
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
+  interrupt(): Promise<{ interrupted: number }>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
   pendingActions(): Promise<{ actions: OrchestratorPendingAction[] }>;
   claimAction(): Promise<{ action: OrchestratorPendingAction | null }>;
@@ -161,6 +162,10 @@ export class OrchestratorService {
 
   send(text: string): Promise<OrchestratorReply> {
     return this.runtime.send(text);
+  }
+
+  interrupt(): Promise<{ interrupted: number }> {
+    return this.runtime.interrupt();
   }
 
   resolveAction(text: string): Promise<OrchestratorActionResolution> {
