@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { escapeCancelAction, shouldFollowOrcThread } from './thread-panel';
+import { escapeCancelAction, shouldFollowOrcThread, workingStatus } from './thread-panel';
 
 describe('shouldFollowOrcThread', () => {
   it('keeps the submitted turn pinned while Orc is working', () => {
@@ -26,5 +26,11 @@ describe('escapeCancelAction', () => {
 
   it('ignores Escape while Orc is idle', () => {
     expect(escapeCancelAction(false, false)).toBe('ignore');
+  });
+});
+
+describe('workingStatus', () => {
+  it('matches the Codex elapsed-time status style', () => {
+    expect(workingStatus(12)).toBe('Working… (12s • esc to stop)');
   });
 });

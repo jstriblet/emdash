@@ -46,6 +46,10 @@ export function escapeCancelAction(
   return confirmationVisible ? 'cancel' : 'confirm';
 }
 
+export function workingStatus(elapsedSeconds: number): string {
+  return `Working… (${elapsedSeconds}s • esc to stop)`;
+}
+
 async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
   let output = '';
   const runtime = await getConversationsClient();
@@ -135,6 +139,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [workingElapsedSeconds, setWorkingElapsedSeconds] = useState(0);
   const [cancelConfirmationVisible, setCancelConfirmationVisible] = useState(false);
   const [workStage, setWorkStage] = useState<OrchestratedWorkStage>();
   const [connecting, setConnecting] = useState(false);
@@ -149,6 +154,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const activeMcpActionIdsRef = useRef(new Set<string>());
   const actionInFlightRef = useRef(false);
   const cancelConfirmationTimerRef = useRef<number | undefined>(undefined);
+  const isOrcWorking = sending || Boolean(health?.busy);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
     for (const entry of [...entries].reverse()) {
@@ -491,15 +497,14 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   }
 
   useEffect(() => {
-    const isWorking = sending || Boolean(health?.busy);
-    if (!isWorking) {
+    if (!isOrcWorking) {
       setCancelConfirmationVisible(false);
       return;
     }
     const stopOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.repeat) return;
       event.preventDefault();
-      const action = escapeCancelAction(isWorking, cancelConfirmationVisible);
+      const action = escapeCancelAction(isOrcWorking, cancelConfirmationVisible);
       if (action === 'confirm') {
         setCancelConfirmationVisible(true);
         if (cancelConfirmationTimerRef.current !== undefined) {
@@ -516,6 +521,19 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     window.addEventListener('keydown', stopOnEscape);
     return () => window.removeEventListener('keydown', stopOnEscape);
   });
+
+  useEffect(() => {
+    if (!isOrcWorking) {
+      setWorkingElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setWorkingElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setWorkingElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [isOrcWorking]);
 
   async function connect(connectionId: string) {
     setConnecting(true);
@@ -682,10 +700,14 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                 </article>
               );
             })}
-            {(sending || health?.busy) && (
+            {isOrcWorking && (
               <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
                 <span>•</span>
-                <span>{workStage ? `${workStage}…` : 'Working… (Esc to stop)'}</span>
+                <span>
+                  {workStage
+                    ? `${workStage}… (${workingElapsedSeconds}s • esc to stop)`
+                    : workingStatus(workingElapsedSeconds)}
+                </span>
               </div>
             )}
             {cancelConfirmationVisible && (
