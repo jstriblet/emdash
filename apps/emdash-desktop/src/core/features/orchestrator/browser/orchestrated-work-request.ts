@@ -242,22 +242,22 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
       candidate.name.toLowerCase() === normalized || candidate.host.toLowerCase() === normalized
   );
   if (connection) {
-    await machines.connect(connection.id);
-    await waitForMachineConnection(machines, connection.id);
-    if (machines.stateFor(connection.id) === 'error' && connection.authType === 'password') {
+    let connectionId = connection.id;
+    if (connection.authType === 'password') {
       const resolved = await machines.getSshConfigHost(hostName.trim());
       const repaired = await machines.saveConnection({
         ...sshConfigHostToConnection(resolved),
         id: connection.id,
         name: connection.name,
       });
-      await machines.connect(repaired.id);
-      await waitForMachineConnection(machines, repaired.id);
+      connectionId = repaired.id;
     }
-    if (machines.stateFor(connection.id) !== 'connected') {
+    await machines.connect(connectionId);
+    await waitForMachineConnection(machines, connectionId);
+    if (machines.stateFor(connectionId) !== 'connected') {
       throw new Error(`SSH connection to “${hostName}” failed`);
     }
-    return { type: 'ssh', connectionId: connection.id };
+    return { type: 'ssh', connectionId };
   }
 
   const configuredHosts = await machines.getSshConfigHosts();
@@ -288,13 +288,6 @@ async function waitForMachineConnection(
   await when(() => ['connected', 'error'].includes(machines.stateFor(connectionId)), {
     timeout: HOST_READY_TIMEOUT_MS,
   });
-}
-
-export function isCredentialDecryptionError(cause: unknown): boolean {
-  return (
-    cause instanceof Error &&
-    /failed to retrieve (?:password|passphrase).*decrypt/i.test(cause.message)
-  );
 }
 
 export function findSshConfigHost(

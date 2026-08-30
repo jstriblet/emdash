@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   findSshConfigHost,
-  isCredentialDecryptionError,
   parseOrchestratedWorkRequest,
   projectPathCandidates,
   runStage,
@@ -122,17 +121,6 @@ describe('SSH config host discovery', () => {
       authType: 'key',
       useAgent: false,
     });
-  });
-
-  it('recognizes an unreadable stale safeStorage credential', () => {
-    expect(
-      isCredentialDecryptionError(
-        new Error(
-          'Failed to retrieve password for connection ssh-1: Error while decrypting the ciphertext'
-        )
-      )
-    ).toBe(true);
-    expect(isCredentialDecryptionError(new Error('Connection refused'))).toBe(false);
   });
 });
 
