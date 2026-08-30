@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
+import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import type { OrchestratorEntry, OrchestratorHealth, OrchestratorPendingAction } from '../api';
@@ -209,6 +210,14 @@ export function ThreadPanel() {
       setError(undefined);
       try {
         const client = await getOrchestratorClient();
+        if (action.kind === 'archive_worker') {
+          const manager = getTaskManagerStore(action.project_id);
+          if (!manager) throw new Error('Worker task manager is not available');
+          await manager.archiveTask(action.emdash_task_id);
+          await client.completeAction({ actionId: action.action_id });
+          await refresh();
+          return;
+        }
         if (action.kind === 'restart_worker') {
           const manager = getConversationsForTask(action.emdash_task_id);
           const session = manager?.sessions.get(action.conversation_id);
@@ -281,6 +290,8 @@ export function ThreadPanel() {
             stage:
               action.kind === 'send_worker_input'
                 ? 'Sending worker input'
+                : action.kind === 'archive_worker'
+                  ? 'Archiving completed worker'
                 : 'Creating work session',
             status: 'failed',
             detail,

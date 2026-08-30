@@ -73,10 +73,19 @@ export const orchestratorWorkerRestartActionSchema = z.object({
   goal: z.string().min(1),
 });
 
+export const orchestratorWorkerArchiveActionSchema = z.object({
+  kind: z.literal('archive_worker'),
+  action_id: z.string().min(1),
+  execution_id: z.string().min(1),
+  project_id: z.string().min(1),
+  emdash_task_id: z.string().min(1),
+});
+
 export const orchestratorPendingActionSchema = z.discriminatedUnion('kind', [
   orchestratorWorkSessionActionSchema,
   orchestratorWorkerInputActionSchema,
   orchestratorWorkerRestartActionSchema,
+  orchestratorWorkerArchiveActionSchema,
 ]);
 
 export const orchestratorActionResolutionSchema = z.object({
