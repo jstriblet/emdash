@@ -1,5 +1,7 @@
 import { Markdown } from '@emdash/ui/react/components';
+import { ReplicaLog } from '@emdash/wire/live';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
@@ -13,6 +15,7 @@ import {
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
 import {
   flushTerminalWrites,
+  rawTerminalPromptExcerpt,
   selectWorkerConversation,
   terminalPromptExcerpt,
 } from './worker-telemetry';
@@ -20,6 +23,27 @@ import {
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
 const IS_DEVELOPMENT = import.meta.env.DEV;
+
+async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
+  let output = '';
+  const runtime = await getConversationsClient();
+  const replica = new ReplicaLog(runtime.tui.output.handle({ conversationId }), {
+    store: {
+      reset(data) {
+        output = data.text.slice(-64_000);
+      },
+      append(chunk) {
+        output = `${output}${chunk}`.slice(-64_000);
+      },
+    },
+  });
+  try {
+    await replica.ready;
+    return rawTerminalPromptExcerpt(output);
+  } finally {
+    await replica.dispose();
+  }
+}
 
 type OrcMachine = { id: string; name: string };
 
@@ -259,6 +283,9 @@ export function ThreadPanel() {
               if (session && !session.pty) await session.connect();
               await flushTerminalWrites(session?.pty?.terminal);
               promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
+              if (!promptExcerpt && conversation) {
+                promptExcerpt = await readWorkerOutput(conversation.id);
+              }
             } catch (cause) {
               promptExcerpt = `Unable to read worker terminal: ${cause instanceof Error ? cause.message : String(cause)}`;
             }

@@ -46,6 +46,18 @@ export function terminalPromptExcerpt(
   return excerpt || undefined;
 }
 
+export function rawTerminalPromptExcerpt(output: string): string | undefined {
+  const normalized = output
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .replaceAll('\u0000', '')
+    .split('\n')
+    .slice(-32)
+    .join('\n');
+  const excerpt = redactSecrets(normalized).slice(-4_000).trim();
+  return excerpt || undefined;
+}
+
 export async function flushTerminalWrites(
   terminal: { write(data: string, callback?: () => void): void } | undefined
 ): Promise<void> {

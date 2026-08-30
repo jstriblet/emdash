@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   flushTerminalWrites,
+  rawTerminalPromptExcerpt,
   selectWorkerConversation,
   terminalPromptExcerpt,
 } from './worker-telemetry';
@@ -23,6 +24,18 @@ describe('selectWorkerConversation', () => {
     ]);
 
     expect(selected?.id).toBe('prompt');
+  });
+});
+
+describe('rawTerminalPromptExcerpt', () => {
+  it('returns a redacted prompt from the authoritative TUI output', () => {
+    const excerpt = rawTerminalPromptExcerpt(
+      'Starting agent\r\n\u001b[33mDo you trust the authors of this folder?\u001b[0m\r\ntoken: ghp_secret'
+    );
+
+    expect(excerpt).toContain('Do you trust the authors of this folder?');
+    expect(excerpt).toContain('[REDACTED]');
+    expect(excerpt).not.toContain('ghp_secret');
   });
 });
 
