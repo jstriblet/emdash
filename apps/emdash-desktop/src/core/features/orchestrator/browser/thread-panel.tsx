@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
+import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import type { OrchestratorEntry, OrchestratorHealth, OrchestratorPendingAction } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
@@ -216,7 +217,7 @@ export function ThreadPanel() {
             throw new Error('Worker conversation is not available');
           }
           await manager.deleteConversation(action.conversation_id);
-          await manager.createConversation({
+          const replacement = await manager.createConversation({
             id: crypto.randomUUID(),
             projectId: conversation.projectId,
             taskId: conversation.taskId,
@@ -228,6 +229,13 @@ export function ThreadPanel() {
             isInitialConversation: conversation.isInitialConversation ?? undefined,
             initialPrompt: action.goal,
           });
+          const taskView = getTaskComposition(conversation.projectId, conversation.taskId);
+          taskView?.paneLayout.open(
+            replacement.type === 'acp' ? 'acp-chat' : 'conversation',
+            { conversationId: replacement.id },
+            { preview: false }
+          );
+          taskView?.setFocusedRegion('main');
           await client.completeAction({ actionId: action.action_id });
           await refresh();
           return;
