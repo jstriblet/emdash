@@ -26,6 +26,15 @@ describe('parseOrchestratedWorkRequest', () => {
     expect(parseOrchestratedWorkRequest('How should we implement dark mode?')).toBeUndefined();
   });
 
+  it('treats a requested repository change as an automatic work session', () => {
+    expect(parseOrchestratedWorkRequest('can you add a read me to the bookscape repo')).toEqual({
+      projectName: 'bookscape',
+      hostName: 'Auto',
+      goal: 'add a read me',
+      agent: 'codex',
+    });
+  });
+
   it('accepts the leading blockquote marker produced when a quoted example is pasted', () => {
     expect(
       parseOrchestratedWorkRequest(

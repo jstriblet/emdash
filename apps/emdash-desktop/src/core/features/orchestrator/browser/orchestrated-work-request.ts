@@ -39,11 +39,22 @@ type OrchestratedProjectType = { type: 'local' } | { type: 'ssh'; connectionId: 
 
 const REQUEST_PATTERN =
   /^(?:>\s*)?create (?:a )?work session in (.+?) on (?:the )?(.+?) to (.+?)(?:\.\s+use (codex|claude)(?:\s+and\s+.*)?)?\.?$/i;
+const REPOSITORY_CHANGE_PATTERN =
+  /^(?:>\s*)?(?:can you\s+|please\s+)?(.+?)\s+(?:in|to)\s+(?:the\s+)?(.+?)\s+repo(?:sitory)?[?.]?$/i;
 
 export function parseOrchestratedWorkRequest(text: string): OrchestratedWorkRequest | undefined {
   const normalized = text.trim().replace(/\s+/g, ' ');
   const match = REQUEST_PATTERN.exec(normalized);
-  if (!match) return undefined;
+  if (!match) {
+    const repositoryChange = REPOSITORY_CHANGE_PATTERN.exec(normalized);
+    if (!repositoryChange) return undefined;
+    return {
+      projectName: repositoryChange[2].trim(),
+      hostName: 'Auto',
+      goal: repositoryChange[1].trim(),
+      agent: 'codex',
+    };
+  }
   return {
     projectName: match[1].trim(),
     hostName: match[2].trim(),
@@ -236,6 +247,14 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
 
   const machines = getMachinesStore();
   await machines.start();
+  if (/^auto$/i.test(hostName.trim())) {
+    const [onlyMachine] = machines.connections;
+    if (machines.connections.length === 0) return { type: 'local' };
+    if (machines.connections.length === 1 && onlyMachine) {
+      return await resolveProjectHost(onlyMachine.name);
+    }
+    throw new Error('Orc found multiple machines; name the machine that contains the repository');
+  }
   const normalized = hostName.trim().toLowerCase();
   const connection = machines.connections.find(
     (candidate) =>
