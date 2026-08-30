@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { OrchestratorWorkContract } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
+import { projectOrcWorkersIntoTasks } from './project-worker-projection';
 
 const REFRESH_INTERVAL_MS = 2_000;
 
@@ -29,6 +30,7 @@ export function WorkersPanel() {
           .filter((contract) => contract.executions.length > 0)
           .sort((left, right) => right.created_at.localeCompare(left.created_at))
       );
+      void projectOrcWorkersIntoTasks(result.workContracts);
       setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load workers');
