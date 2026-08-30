@@ -81,6 +81,7 @@ export function ThreadPanel() {
   const [installingMacApp, setInstallingMacApp] = useState(false);
   const [machines, setMachines] = useState<OrcMachine[]>([]);
   const [workContracts, setWorkContracts] = useState<OrchestratorWorkContract[]>([]);
+  const [showContracts, setShowContracts] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractGoal, setContractGoal] = useState('');
   const [contractProcedure, setContractProcedure] = useState('');
@@ -243,6 +244,7 @@ export function ThreadPanel() {
       setContractProcedure('');
       setContractExpected('');
       setShowContractForm(false);
+      setShowContracts(true);
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create work contract');
@@ -390,17 +392,35 @@ export function ThreadPanel() {
               className="sticky top-0 z-10 mb-8 border-y border-[#383633] bg-[#111417]/95 py-3 backdrop-blur"
               aria-label="Work Contracts"
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[#8f8a83]">work contracts</span>
+              <div
+                className={
+                  showContracts
+                    ? 'mb-2 flex items-center justify-between'
+                    : 'flex items-center justify-between'
+                }
+              >
                 <button
                   type="button"
-                  onClick={() => setShowContractForm((visible) => !visible)}
+                  onClick={() => setShowContracts((visible) => !visible)}
+                  className="flex items-center gap-2 text-[#8f8a83] hover:text-[#e8e4dd]"
+                  aria-expanded={showContracts}
+                >
+                  <span aria-hidden="true">{showContracts ? '▾' : '▸'}</span>
+                  <span>work contracts</span>
+                  <span className="text-[#625f5b]">{workContracts.length}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowContracts(true);
+                    setShowContractForm((visible) => !visible);
+                  }}
                   className="text-[#b6b0a7] hover:text-[#e8e4dd]"
                 >
                   {showContractForm ? 'cancel' : '+ new'}
                 </button>
               </div>
-              {showContractForm && (
+              {showContracts && showContractForm && (
                 <form onSubmit={createWorkContract} className="mb-4 grid gap-2 border-l border-[#59554f] pl-3">
                   <input
                     aria-label="Desired outcome"
@@ -432,9 +452,9 @@ export function ThreadPanel() {
                   </button>
                 </form>
               )}
-              {workContracts.length === 0 ? (
+              {showContracts && workContracts.length === 0 ? (
                 <p className="text-[#625f5b]">no contracts yet</p>
-              ) : (
+              ) : showContracts ? (
                 <div className="grid gap-3">
                   {workContracts.slice(-5).reverse().map((contract) => {
                     const incomplete = contract.checks.filter(
@@ -476,7 +496,7 @@ export function ThreadPanel() {
                     );
                   })}
                 </div>
-              )}
+              ) : null}
             </section>
             {visibleEntries.map((entry) => {
               const activity = parseActivity(entry);
