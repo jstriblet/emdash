@@ -201,14 +201,22 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       archive: async ({ executionId }) => {
         const found = await findManualRun(executionId);
         if (!found.success) return err(found.error);
-        const conversationId = found.data?.conversationId;
-        if (!conversationId) return ok(undefined);
-        const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
-        if (!deleted.success) return orchestrationFailure(deleted.error);
-        const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
-        return conversationDeleted.success
+        const run = found.data;
+        if (!run) return ok(undefined);
+        const conversationId = run.conversationId;
+        if (conversationId) {
+          const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
+          if (!deleted.success) return orchestrationFailure(deleted.error);
+          const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
+          if (!conversationDeleted.success) return orchestrationFailure(conversationDeleted.error);
+        }
+        const workspaceDeleted = await deps.runtimes.workspaceRegistry.deleteWorktree({
+          workspaceId: run.id,
+          deleteBranch: true,
+        });
+        return workspaceDeleted.success
           ? ok(undefined)
-          : orchestrationFailure(conversationDeleted.error);
+          : orchestrationFailure(workspaceDeleted.error);
       },
       cancel: async ({ executionId }) => {
         const listed = await deps.runtimes.automations.listRuns({
