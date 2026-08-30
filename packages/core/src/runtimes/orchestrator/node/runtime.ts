@@ -4,6 +4,7 @@ import {
   orchestratorWorkContractSchema,
   orchestratorThreadSchema,
   type OrchestratorHealth,
+  type OrchestratorExecutionLinkInput,
   type OrchestratorReply,
   type OrchestratorThread,
   type OrchestratorWorkContract,
@@ -74,6 +75,21 @@ export class OrchestratorRuntime {
     return this.#request(
       `/work-contracts/${encodeURIComponent(contractId)}/updates`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(update) },
+      orchestratorWorkContractSchema.parse
+    );
+  }
+
+  bindWorkContractExecution(
+    contractId: string,
+    execution: OrchestratorExecutionLinkInput
+  ): Promise<OrchestratorWorkContract> {
+    return this.#request(
+      `/work-contracts/${encodeURIComponent(contractId)}/executions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(execution),
+      },
       orchestratorWorkContractSchema.parse
     );
   }

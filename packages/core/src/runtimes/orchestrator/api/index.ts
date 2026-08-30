@@ -1,6 +1,8 @@
 export { orchestratorContract, orchestratorDomain, type OrchestratorContract } from './contract';
 export {
   orchestratorEntrySchema,
+  orchestratorExecutionLinkInputSchema,
+  orchestratorExecutionLinkSchema,
   orchestratorForkUpdateSchema,
   orchestratorHealthSchema,
   orchestratorReplySchema,
@@ -11,6 +13,7 @@ export {
   orchestratorWorkContractSchema,
   orchestratorWorkContractUpdateInputSchema,
   type OrchestratorEntry,
+  type OrchestratorExecutionLinkInput,
   type OrchestratorForkUpdate,
   type OrchestratorHealth,
   type OrchestratorReply,

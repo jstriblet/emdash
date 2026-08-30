@@ -80,6 +80,22 @@ export const orchestratorWorkContractCheckStateSchema = z.object({
   waiver_reason: z.string().nullable(),
 });
 
+export const orchestratorExecutionLinkInputSchema = z.object({
+  execution_id: z.string().min(1),
+  host_id: z.string().min(1),
+  project_id: z.string().min(1),
+  emdash_task_id: z.string().min(1),
+  agent: z.string().min(1),
+  state: z.enum(['requested', 'provisioning', 'running', 'blocked', 'completed', 'failed']),
+  worktree_path: z.string().nullable().optional(),
+  session_id: z.string().nullable().optional(),
+});
+
+export const orchestratorExecutionLinkSchema = orchestratorExecutionLinkInputSchema.extend({
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 export const orchestratorWorkContractSchema = z.object({
   task_id: z.string(),
   revision: z.number().int().positive(),
@@ -87,6 +103,7 @@ export const orchestratorWorkContractSchema = z.object({
   created_at: z.string(),
   contract: orchestratorWorkContractInputSchema,
   checks: z.array(orchestratorWorkContractCheckStateSchema),
+  executions: z.array(orchestratorExecutionLinkSchema),
 });
 
 export const orchestratorWorkContractUpdateInputSchema = z.object({
@@ -136,6 +153,9 @@ export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
 export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
 export type OrchestratorWorkContractInput = z.infer<typeof orchestratorWorkContractInputSchema>;
 export type OrchestratorWorkContract = z.infer<typeof orchestratorWorkContractSchema>;
+export type OrchestratorExecutionLinkInput = z.infer<
+  typeof orchestratorExecutionLinkInputSchema
+>;
 export type OrchestratorWorkContractUpdateInput = z.infer<
   typeof orchestratorWorkContractUpdateInputSchema
 >;

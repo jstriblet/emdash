@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   OrchestratorHealth,
+  OrchestratorExecutionLinkInput,
   OrchestratorForkUpdate,
   OrchestratorReply,
   OrchestratorThread,
@@ -34,6 +35,10 @@ export type OrchestratorRuntimeClient = {
   updateWorkContract(
     contractId: string,
     update: OrchestratorWorkContractUpdateInput
+  ): Promise<OrchestratorWorkContract>;
+  bindWorkContractExecution(
+    contractId: string,
+    execution: OrchestratorExecutionLinkInput
   ): Promise<OrchestratorWorkContract>;
 };
 
@@ -161,6 +166,13 @@ export class OrchestratorService {
     update: OrchestratorWorkContractUpdateInput
   ): Promise<OrchestratorWorkContract> {
     return this.runtime.updateWorkContract(contractId, update);
+  }
+
+  bindWorkContractExecution(
+    contractId: string,
+    execution: OrchestratorExecutionLinkInput
+  ): Promise<OrchestratorWorkContract> {
+    return this.runtime.bindWorkContractExecution(contractId, execution);
   }
 
   async dispose(): Promise<void> {

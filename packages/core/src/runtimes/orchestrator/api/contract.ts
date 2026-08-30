@@ -1,6 +1,7 @@
 import { defineContract, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
 import {
+  orchestratorExecutionLinkInputSchema,
   orchestratorHealthSchema,
   orchestratorForkUpdateSchema,
   orchestratorReplySchema,
@@ -38,6 +39,13 @@ export const orchestratorContract = defineContract({
   }),
   updateWorkContract: procedure({
     input: z.object({ contractId: z.string(), update: orchestratorWorkContractUpdateInputSchema }),
+    output: orchestratorWorkContractSchema,
+  }),
+  bindWorkContractExecution: procedure({
+    input: z.object({
+      contractId: z.string(),
+      execution: orchestratorExecutionLinkInputSchema,
+    }),
     output: orchestratorWorkContractSchema,
   }),
 });

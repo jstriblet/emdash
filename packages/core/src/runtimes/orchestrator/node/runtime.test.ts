@@ -34,6 +34,7 @@ describe('OrchestratorRuntime', () => {
         waiver_reason: null,
       },
     ],
+    executions: [],
   } as const;
 
   it('reads and validates the shared thread', async () => {
@@ -110,6 +111,42 @@ describe('OrchestratorRuntime', () => {
     expect(fetch).toHaveBeenCalledWith(
       'http://orc.test/work-contracts/contract%2F1/updates',
       expect.objectContaining({ method: 'POST', body: JSON.stringify(update) })
+    );
+  });
+
+  it('links a work contract to its Emdash execution task', async () => {
+    const linked = {
+      ...workContract,
+      executions: [
+        {
+          execution_id: 'exec-1',
+          host_id: 'thinkcenter',
+          project_id: 'bookscape',
+          emdash_task_id: 'emdash-task-1',
+          agent: 'codex',
+          state: 'running',
+          created_at: '2026-08-29T10:01:00-04:00',
+          updated_at: '2026-08-29T10:01:00-04:00',
+        },
+      ],
+    } as const;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(linked));
+    const runtime = new OrchestratorRuntime({ baseUrl: 'http://orc.test', fetch });
+    const execution = {
+      execution_id: 'exec-1',
+      host_id: 'thinkcenter',
+      project_id: 'bookscape',
+      emdash_task_id: 'emdash-task-1',
+      agent: 'codex',
+      state: 'running' as const,
+    };
+
+    await expect(runtime.bindWorkContractExecution('contract-1', execution)).resolves.toMatchObject({
+      executions: [{ emdash_task_id: 'emdash-task-1' }],
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://orc.test/work-contracts/contract-1/executions',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(execution) })
     );
   });
 

@@ -61,6 +61,7 @@ describe('OrchestratorService', () => {
       workContracts: vi.fn(),
       createWorkContract: vi.fn(),
       updateWorkContract: vi.fn(),
+      bindWorkContractExecution: vi.fn(),
     });
     service = new OrchestratorService(ssh, createRuntime, { remotePort });
 
