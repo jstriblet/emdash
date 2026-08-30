@@ -34,6 +34,7 @@ describe('rawTerminalPromptExcerpt', () => {
     );
 
     expect(excerpt).toContain('Do you trust the authors of this folder?');
+    expect(excerpt).not.toContain('\u001b');
     expect(excerpt).toContain('[REDACTED]');
     expect(excerpt).not.toContain('ghp_secret');
   });

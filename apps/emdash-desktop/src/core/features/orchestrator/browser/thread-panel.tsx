@@ -239,7 +239,23 @@ export function ThreadPanel() {
         await client.completeAction({ actionId: action.action_id });
         await refresh();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'MCP work-session action failed');
+        const detail = cause instanceof Error ? cause.message : 'MCP action failed';
+        setError(detail);
+        try {
+          await (
+            await getOrchestratorClient()
+          ).reportActionProgress({
+            actionId: action.action_id,
+            stage:
+              action.kind === 'send_worker_input'
+                ? 'Sending worker input'
+                : 'Creating work session',
+            status: 'failed',
+            detail,
+          });
+        } catch {
+          // Preserve the original action error when reporting it also fails.
+        }
       } finally {
         activeMcpActionIdsRef.current.delete(action.action_id);
         setSending(false);

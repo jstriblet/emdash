@@ -47,7 +47,11 @@ export function terminalPromptExcerpt(
 }
 
 export function rawTerminalPromptExcerpt(output: string): string | undefined {
-  const normalized = output
+  const clearScreen = '\u001b[1;1H\u001b[J';
+  const lastScreen = output.slice(Math.max(0, output.lastIndexOf(clearScreen)));
+  const ansiCsi = new RegExp('\\u001b\\[[0-?]*[ -/]*[@-~]', 'g');
+  const normalized = lastScreen
+    .replace(ansiCsi, '')
     .replaceAll('\r\n', '\n')
     .replaceAll('\r', '\n')
     .replaceAll('\u0000', '')
