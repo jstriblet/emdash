@@ -45,4 +45,11 @@ export function terminalPromptExcerpt(
   const excerpt = redactSecrets(lines.join('\n')).slice(-4_000).trim();
   return excerpt || undefined;
 }
+
+export async function flushTerminalWrites(
+  terminal: { write(data: string, callback?: () => void): void } | undefined
+): Promise<void> {
+  if (!terminal) return;
+  await new Promise<void>((resolve) => terminal.write('', resolve));
+}
 import { redactSecrets } from '@emdash/shared/logger';

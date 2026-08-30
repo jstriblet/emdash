@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { selectWorkerConversation, terminalPromptExcerpt } from './worker-telemetry';
+import {
+  flushTerminalWrites,
+  selectWorkerConversation,
+  terminalPromptExcerpt,
+} from './worker-telemetry';
 
 describe('selectWorkerConversation', () => {
   it('surfaces an awaiting-input worker ahead of an idle conversation', () => {
@@ -37,5 +41,18 @@ describe('terminalPromptExcerpt', () => {
     expect(excerpt).toContain('Do you trust the authors of this folder?');
     expect(excerpt).toContain('[REDACTED]');
     expect(excerpt).not.toContain('ghp_secret');
+  });
+});
+
+describe('flushTerminalWrites', () => {
+  it('waits until xterm has parsed queued output', async () => {
+    let parsed = false;
+    await flushTerminalWrites({
+      write: (_data, callback) => {
+        parsed = true;
+        callback?.();
+      },
+    });
+    expect(parsed).toBe(true);
   });
 });

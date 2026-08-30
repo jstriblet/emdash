@@ -11,7 +11,11 @@ import {
   type OrchestratedWorkStage,
 } from './orchestrated-work-request';
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
-import { selectWorkerConversation, terminalPromptExcerpt } from './worker-telemetry';
+import {
+  flushTerminalWrites,
+  selectWorkerConversation,
+  terminalPromptExcerpt,
+} from './worker-telemetry';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
@@ -253,6 +257,7 @@ export function ThreadPanel() {
             let promptExcerpt: string | undefined;
             try {
               if (session && !session.pty) await session.connect();
+              await flushTerminalWrites(session?.pty?.terminal);
               promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
             } catch (cause) {
               promptExcerpt = `Unable to read worker terminal: ${cause instanceof Error ? cause.message : String(cause)}`;
