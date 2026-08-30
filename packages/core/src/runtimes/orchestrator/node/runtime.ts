@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import {
   orchestratorActionResolutionSchema,
+  orchestratorPendingActionsSchema,
   orchestratorHealthSchema,
   orchestratorReplySchema,
   orchestratorWorkContractSchema,
   orchestratorThreadSchema,
   type OrchestratorActionResolution,
   type OrchestratorActionProgressInput,
+  type OrchestratorWorkSessionAction,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
   type OrchestratorReply,
@@ -65,6 +67,18 @@ export class OrchestratorRuntime {
         body: JSON.stringify({ surface: 'emdash', text }),
       },
       orchestratorActionResolutionSchema.parse
+    );
+  }
+
+  pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }> {
+    return this.#request('/actions/pending', undefined, orchestratorPendingActionsSchema.parse);
+  }
+
+  completeAction(actionId: string): Promise<{ completed: boolean }> {
+    return this.#request(
+      `/actions/${encodeURIComponent(actionId)}/complete`,
+      { method: 'POST' },
+      (value) => value as { completed: boolean }
     );
   }
 

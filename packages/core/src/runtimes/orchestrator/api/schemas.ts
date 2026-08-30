@@ -60,6 +60,12 @@ export const orchestratorActionResolutionSchema = z.object({
   action: orchestratorWorkSessionActionSchema.nullable(),
 });
 
+export const orchestratorPendingActionsSchema = z.object({
+  actions: z.array(orchestratorWorkSessionActionSchema),
+});
+
+export const orchestratorActionCompletionSchema = z.object({ completed: z.boolean() });
+
 export const orchestratorActionProgressInputSchema = z.object({
   actionId: z.string().min(1),
   stage: z.string().min(1),

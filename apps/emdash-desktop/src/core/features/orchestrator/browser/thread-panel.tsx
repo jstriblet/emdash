@@ -2,7 +2,7 @@ import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
-import type { OrchestratorEntry, OrchestratorHealth } from '../api';
+import type { OrchestratorEntry, OrchestratorHealth, OrchestratorWorkSessionAction } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 import {
   createOrchestratedWorkSession,
@@ -92,6 +92,7 @@ export function ThreadPanel() {
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const shouldFollowThreadRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
+  const activeMcpActionIdsRef = useRef(new Set<string>());
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
     for (const entry of [...entries].reverse()) {
@@ -168,6 +169,63 @@ export function ThreadPanel() {
     const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  const executeMcpAction = useCallback(
+    async (action: OrchestratorWorkSessionAction) => {
+      if (activeMcpActionIdsRef.current.has(action.action_id)) return;
+      activeMcpActionIdsRef.current.add(action.action_id);
+      setSending(true);
+      setError(undefined);
+      try {
+        const client = await getOrchestratorClient();
+        await createOrchestratedWorkSession(
+          {
+            projectName: action.project_name,
+            hostName: action.host_name,
+            goal: action.goal,
+            agent: action.agent,
+          },
+          navigate,
+          async (stage, status, detail) => {
+            if (status === 'started') setWorkStage(stage);
+            await client.reportActionProgress({
+              actionId: action.action_id,
+              stage,
+              status,
+              detail,
+            });
+          }
+        );
+        await client.completeAction({ actionId: action.action_id });
+        await refresh();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'MCP work-session action failed');
+      } finally {
+        activeMcpActionIdsRef.current.delete(action.action_id);
+        setSending(false);
+        setWorkStage(undefined);
+      }
+    },
+    [navigate, refresh]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const { actions } = await (await getOrchestratorClient()).pendingActions(undefined);
+        if (!cancelled) actions.forEach((action) => void executeMcpAction(action));
+      } catch {
+        // Connection errors are already represented by the Thread panel health state.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), REFRESH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [executeMcpAction]);
 
   useEffect(() => {
     if (shouldFollowThreadRef.current) endRef.current?.scrollIntoView({ block: 'end' });

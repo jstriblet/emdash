@@ -3,6 +3,8 @@ export {
   orchestratorActionResolutionSchema,
   orchestratorActionProgressInputSchema,
   orchestratorActionProgressResultSchema,
+  orchestratorActionCompletionSchema,
+  orchestratorPendingActionsSchema,
   orchestratorEntrySchema,
   orchestratorExecutionLinkInputSchema,
   orchestratorExecutionLinkSchema,
