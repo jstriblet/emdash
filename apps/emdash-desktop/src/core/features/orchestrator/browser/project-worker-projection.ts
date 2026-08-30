@@ -93,8 +93,10 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
     runInAction(() => taskManager.tasks.delete(contract.task_id));
     return;
   }
-  if ('archivedAt' in task.data && task.data.archivedAt) return;
-  await taskManager.archiveTask(contract.task_id);
+  await taskManager.deleteTask(contract.task_id, {
+    deleteWorktree: false,
+    deleteBranch: false,
+  });
 }
 
 /**
