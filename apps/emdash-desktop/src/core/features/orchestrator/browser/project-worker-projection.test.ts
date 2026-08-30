@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isOnlyTaskInProject,
   selectProjectionMachineId,
   shouldAdoptHostConversation,
 } from './project-worker-projection';
@@ -52,5 +53,15 @@ describe('shouldAdoptHostConversation', () => {
 
   it('does not re-adopt a conversation that remains hydrated', () => {
     expect(shouldAdoptHostConversation(true, true)).toBe(false);
+  });
+});
+
+describe('isOnlyTaskInProject', () => {
+  it('allows project cleanup when the completed Orc task is the only task', () => {
+    expect(isOnlyTaskInProject(['orc-task'], 'orc-task')).toBe(true);
+  });
+
+  it('preserves a project containing another task', () => {
+    expect(isOnlyTaskInProject(['orc-task', 'other-task'], 'orc-task')).toBe(false);
   });
 });

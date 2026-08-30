@@ -152,6 +152,11 @@ function isTerminal(contract: OrchestratorWorkContract): boolean {
   );
 }
 
+export function isOnlyTaskInProject(taskIds: Iterable<string>, taskId: string): boolean {
+  const ids = [...taskIds];
+  return ids.length === 1 && ids[0] === taskId;
+}
+
 async function closeTerminalProjection(contract: OrchestratorWorkContract): Promise<void> {
   const execution = contract.executions.at(-1);
   if (!execution || !isTerminal(contract)) return;
@@ -167,14 +172,16 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   terminalProjectionFirstObservedAt.set(contract.task_id, firstObservedAt);
   if (Date.now() - firstObservedAt < TERMINAL_PROJECTION_GRACE_MS) return;
   terminalProjectionFirstObservedAt.delete(contract.task_id);
+  const shouldDeleteProject = isOnlyTaskInProject(taskManager.tasks.keys(), contract.task_id);
   if (task.state === 'unregistered') {
     runInAction(() => taskManager.tasks.delete(contract.task_id));
-    return;
+  } else {
+    await taskManager.deleteTask(contract.task_id, {
+      deleteWorktree: false,
+      deleteBranch: false,
+    });
   }
-  await taskManager.deleteTask(contract.task_id, {
-    deleteWorktree: false,
-    deleteBranch: false,
-  });
+  if (shouldDeleteProject && taskManager.tasks.size === 0) await projects.deleteProject(project.id);
 }
 
 /**
