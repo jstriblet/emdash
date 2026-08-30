@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOrchestratedWorkRequest } from './orchestrated-work-request';
+import { parseOrchestratedWorkRequest, projectPathCandidates } from './orchestrated-work-request';
 
 describe('parseOrchestratedWorkRequest', () => {
   it('parses the documented conversational trigger', () => {
@@ -30,5 +30,11 @@ describe('parseOrchestratedWorkRequest', () => {
       goal: 'add a README note',
       agent: 'codex',
     });
+  });
+
+  it('searches conventional repository roots with the requested and normalized names', () => {
+    expect(projectPathCandidates('/home/jonathan', 'BookScape')).toContain(
+      '/home/jonathan/src/bookscape'
+    );
   });
 });
