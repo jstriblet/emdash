@@ -2,7 +2,6 @@ import { Fragment } from 'react';
 import { Titlebar } from '@core/features/workbench/contributions/browser/Titlebar';
 import { defineViewRuntime } from '@core/primitives/views/react';
 import { orchestratorViewDef } from '../contributions/views';
-import { OrcWorkerProjection } from './project-worker-projection';
 import { ThreadPanel } from './thread-panel';
 
 function OrchestratorTitlebar() {
@@ -12,7 +11,6 @@ function OrchestratorTitlebar() {
 function OrchestratorView() {
   return (
     <div className="h-full min-h-0 min-w-0">
-      <OrcWorkerProjection />
       <ThreadPanel />
     </div>
   );

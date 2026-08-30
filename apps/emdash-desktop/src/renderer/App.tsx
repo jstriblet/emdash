@@ -5,6 +5,7 @@ import { useAccountSession } from '@core/features/account/api/browser/useAccount
 import { GithubContextProvider } from '@core/features/github/api/browser/github-context-provider';
 import { IntegrationsProvider } from '@core/features/integrations/contributions/browser/integrations-provider';
 import { useLegacyPortStatus } from '@core/features/legacy-port/api/browser/useLegacyPort';
+import { OrcWorkerProjection } from '@core/features/orchestrator/browser/project-worker-projection';
 import { ThreadPanel } from '@core/features/orchestrator/browser/thread-panel';
 import { TerminalPoolProvider } from '@core/features/terminals/browser/pty/pty-pool-provider';
 import { confirmOpenExternalLink } from '@core/features/workbench/api/browser/open-external-link';
@@ -116,6 +117,7 @@ function AppContent() {
                     <ModalRenderer />
                     <AppShutdownLifecycle />
                     <HostRecoveryWakeups />
+                    <OrcWorkerProjection />
                     <div hidden>
                       <ThreadPanel backgroundRuntime />
                     </div>
