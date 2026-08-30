@@ -9,14 +9,21 @@ export async function restoreOrchestratorConnection(
   client: AutoConnectClient,
   machines: SavedMachine[]
 ): Promise<boolean> {
-  const [onlyMachine] = machines;
-  if (machines.length !== 1 || !onlyMachine) return false;
+  if (machines.length === 0) return false;
 
   try {
     await client.health();
     return false;
   } catch {
-    await client.connect({ connectionId: onlyMachine.id });
-    return true;
+    let lastError: unknown;
+    for (const machine of machines) {
+      try {
+        await client.connect({ connectionId: machine.id });
+        return true;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
   }
 }

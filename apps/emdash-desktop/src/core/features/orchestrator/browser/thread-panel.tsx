@@ -177,7 +177,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
         setMachines(saved.map(({ id, name }) => ({ id, name })));
         const client = await getOrchestratorClient();
         if (cancelled) return;
-        if (saved.length === 1) {
+        if (saved.length > 0) {
           setConnecting(true);
           try {
             const reconnected = await restoreOrchestratorConnection(client, saved);
