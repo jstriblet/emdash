@@ -154,6 +154,8 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const activeMcpActionIdsRef = useRef(new Set<string>());
   const actionInFlightRef = useRef(false);
   const cancelConfirmationTimerRef = useRef<number | undefined>(undefined);
+  const sendGenerationRef = useRef(0);
+  const activeSendRef = useRef<Promise<unknown> | undefined>(undefined);
   const isOrcWorking = sending || Boolean(health?.busy);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
@@ -458,7 +460,9 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text) return;
+    const generation = ++sendGenerationRef.current;
+    const isFollowUp = isOrcWorking;
     submittedTurnInFlightRef.current = true;
     shouldFollowThreadRef.current = true;
     setSending(true);
@@ -467,15 +471,25 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     setError(undefined);
     try {
       const client = await getOrchestratorClient();
-      await client.send({ text });
+      const previousSend = activeSendRef.current;
+      if (isFollowUp) {
+        await client.interrupt(undefined);
+        await previousSend?.catch(() => undefined);
+      }
+      const activeSend = client.send({ text });
+      activeSendRef.current = activeSend;
+      await activeSend;
+      if (activeSendRef.current === activeSend) activeSendRef.current = undefined;
       await refresh();
     } catch (cause) {
-      setDraft(text);
+      if (sendGenerationRef.current === generation) setDraft(text);
       setError(cause instanceof Error ? cause.message : 'Message failed');
     } finally {
-      submittedTurnInFlightRef.current = false;
-      setSending(false);
-      setWorkStage(undefined);
+      if (sendGenerationRef.current === generation) {
+        submittedTurnInFlightRef.current = false;
+        setSending(false);
+        setWorkStage(undefined);
+      }
     }
   }
 
@@ -744,8 +758,8 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Ask Orc to do anything"
-            disabled={sending || !health}
+            placeholder={isOrcWorking ? 'Send a follow-up to Orc' : 'Ask Orc to do anything'}
+            disabled={!health}
             rows={1}
             className="max-h-48 min-h-8 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 font-mono text-[13px] leading-5 text-[#e8e4dd] outline-none placeholder:text-[#625f5b] disabled:cursor-not-allowed disabled:opacity-50"
           />
