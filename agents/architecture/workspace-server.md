@@ -62,13 +62,19 @@ port is accepting connections on IPv4, IPv6, or both. Desktop clients can use
 this as the wire control plane before opening a transport-native data stream for
 preview traffic.
 
+Orc's always-on execution control plane is mounted under
+`workspaceWireContract.orchestration`. It launches automation-backed worktrees, inspects TUI
+session and agent state, exposes retained output, accepts worker input, and archives conversations
+without requiring a connected desktop renderer. The desktop may project these runs into its UI,
+but it does not own their lifetime.
+
 ## Protocol Version
 
 The wire contract is versioned with a single [semver](https://semver.org) string, defined in
 [`packages/core/src/workspace-server/versions/index.ts`](../../packages/core/src/workspace-server/versions/index.ts):
 
 ```ts
-export const PROTOCOL_VERSION = '5.0.0';
+export const PROTOCOL_VERSION = '5.2.0';
 ```
 
 ### What each component means
