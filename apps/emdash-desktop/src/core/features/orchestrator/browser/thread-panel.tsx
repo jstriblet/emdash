@@ -1,6 +1,5 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { getConversationsClient } from '@core/features/conversations/api/browser/client';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
@@ -235,26 +234,29 @@ export function ThreadPanel() {
     const publishWorkerTelemetry = async () => {
       try {
         const client = await getOrchestratorClient();
-        const conversationsClient = await getConversationsClient();
         const { workContracts } = await client.workContracts(undefined);
         const executions = workContracts.flatMap((contract) => contract.executions);
         await Promise.allSettled(
           executions.map(async (execution) => {
-            const conversations = await conversationsClient.getConversationsForTask({
-              projectId: execution.project_id,
-              taskId: execution.emdash_task_id,
-            });
             if (cancelled) return;
-            const conversation = selectWorkerConversation(conversations);
             const conversationManager = getConversationsForTask(execution.emdash_task_id);
+            const conversations = [...(conversationManager?.conversations.values() ?? [])].map(
+              (store) => ({ ...store.data, agentStatus: store.status })
+            );
+            const conversation = selectWorkerConversation(conversations);
             const liveConversation = conversation
               ? conversationManager?.conversations.get(conversation.id)
               : undefined;
             const session = conversation
               ? conversationManager?.sessions.get(conversation.id)
               : undefined;
-            if (session && !session.pty) await session.connect();
-            const promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
+            let promptExcerpt: string | undefined;
+            try {
+              if (session && !session.pty) await session.connect();
+              promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
+            } catch (cause) {
+              promptExcerpt = `Unable to read worker terminal: ${cause instanceof Error ? cause.message : String(cause)}`;
+            }
             await client.reportWorkerTelemetry({
               executionId: execution.execution_id,
               emdashTaskId: execution.emdash_task_id,
@@ -262,7 +264,10 @@ export function ThreadPanel() {
               conversationId: conversation?.id,
               sessionId: conversation?.sessionId,
               provider: conversation?.providerId ?? execution.agent,
-              status: liveConversation?.status ?? conversation?.agentStatus ?? 'idle',
+              status:
+                liveConversation?.status ??
+                conversation?.agentStatus ??
+                (conversationManager ? 'idle' : 'session-unavailable'),
               notificationType: liveConversation?.lastNotificationType,
               promptExcerpt,
               observedAt: new Date().toISOString(),
