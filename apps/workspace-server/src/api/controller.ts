@@ -40,6 +40,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     { executionId: string; projectId: string; lastStatus?: string }
   >();
   const pendingOrcExecutions = new Map<string, string>();
+  let orcMessageQueue = Promise.resolve();
 
   const findManualRun = async (executionId: string) => {
     const listed = await deps.runtimes.automations.listRuns({
@@ -166,11 +167,15 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         }
       );
       if (response.ok && status === 'blocked') {
-        void fetch('http://127.0.0.1:8790/message', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ surface: 'terminal', text: message }),
-        }).catch(() => undefined);
+        orcMessageQueue = orcMessageQueue
+          .then(async () => {
+            await fetch('http://127.0.0.1:8790/message', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ surface: 'terminal', text: message }),
+            });
+          })
+          .catch(() => undefined);
       }
       if (!response.ok || status !== 'completed') continue;
       const directive = (await response.json()) as { action?: string; archive_delay_ms?: number };

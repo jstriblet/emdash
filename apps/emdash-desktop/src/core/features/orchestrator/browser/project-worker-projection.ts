@@ -54,6 +54,42 @@ function basename(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path;
 }
 
+function parentPath(path: string): string {
+  return path.replace(/\/+$/, '').split('/').slice(0, -1).join('/');
+}
+
+export function selectProjectionMachineId(
+  machines: readonly {
+    id: string;
+    name: string;
+    host: string;
+    sshConfigAlias?: string | null;
+  }[],
+  projects: readonly {
+    data?: { type: string; path?: string; connectionId?: string } | null;
+  }[],
+  repositoryPath: string,
+  hostId: string
+): string | undefined {
+  const wanted = normalizedHost(hostId);
+  const direct = machines.find((candidate) =>
+    [candidate.id, candidate.name, candidate.host, candidate.sshConfigAlias]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => normalizedHost(value) === wanted)
+  );
+  if (direct) return direct.id;
+
+  const repositoryParent = parentPath(repositoryPath);
+  const sibling = projects.find(
+    (candidate) =>
+      candidate.data?.type === 'ssh' &&
+      candidate.data.path !== undefined &&
+      parentPath(candidate.data.path) === repositoryParent
+  );
+  const siblingConnectionId = sibling?.data?.connectionId;
+  return machines.find((candidate) => candidate.id === siblingConnectionId)?.id;
+}
+
 async function findOrCreateProject(repositoryPath: string, hostId: string) {
   const projects = getProjectManagerStore();
   const existing = [...projects.projects.values()].find(
@@ -65,12 +101,13 @@ async function findOrCreateProject(repositoryPath: string, hostId: string) {
   if (projectCreationAttempts.has(creationKey)) return undefined;
 
   const machines = await (await getMachinesClient()).getMachines(undefined);
-  const wanted = normalizedHost(hostId);
-  const machine = machines.find((candidate) =>
-    [candidate.name, candidate.host, candidate.sshConfigAlias]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => normalizedHost(value) === wanted)
+  const machineId = selectProjectionMachineId(
+    machines,
+    [...projects.projects.values()],
+    repositoryPath,
+    hostId
   );
+  const machine = machines.find((candidate) => candidate.id === machineId);
   if (!machine) return undefined;
 
   projectCreationAttempts.add(creationKey);
