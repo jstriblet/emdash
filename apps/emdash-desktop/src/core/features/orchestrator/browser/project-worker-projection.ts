@@ -19,6 +19,12 @@ const linkedConversations = new Set<string>();
 const openedConversations = new Set<string>();
 const reportedProjectionStages = new Set<string>();
 const REFRESH_INTERVAL_MS = 2_000;
+const CONVERSATION_ADOPTION_ATTEMPTS = 40;
+const CONVERSATION_ADOPTION_RETRY_MS = 250;
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 async function reportProjectionStage(
   executionId: string,
@@ -229,12 +235,17 @@ export async function projectOrcWorkersIntoTasks(
 
       if (execution.session_id && !linkedConversations.has(execution.session_id)) {
         const conversations = await getConversationsClient();
-        const adopted = await conversations.adoptHostConversation({
-          host: hostRef('remote', connectionId),
-          conversationId: execution.session_id,
-          projectId: project.id,
-          taskId: contract.task_id,
-        });
+        let adopted = false;
+        for (let attempt = 0; attempt < CONVERSATION_ADOPTION_ATTEMPTS; attempt += 1) {
+          adopted = await conversations.adoptHostConversation({
+            host: hostRef('remote', connectionId),
+            conversationId: execution.session_id,
+            projectId: project.id,
+            taskId: contract.task_id,
+          });
+          if (adopted) break;
+          await delay(CONVERSATION_ADOPTION_RETRY_MS);
+        }
         if (!adopted) {
           await reportProjectionStage(
             execution.execution_id,
