@@ -1,0 +1,93 @@
+name: Release Emdash Orc for macOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - phase-4-orchestrator-thread
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-emdash-orc-mac
+  cancel-in-progress: true
+
+jobs:
+  release-mac:
+    runs-on: macos-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set unique Orc release version
+        id: version
+        working-directory: apps/emdash-desktop
+        run: |
+          version="1.2.1-orc.${GITHUB_RUN_NUMBER}"
+          pnpm pkg set version="$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.CERTIFICATE_PASSWORD }}
+
+      - name: Build signed Emdash Orc DMG and updater ZIP
+        working-directory: apps/emdash-desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+        run: pnpm run package:mac:orc -- --arm64 --publish never
+
+      - name: Notarize and staple
+        working-directory: apps/emdash-desktop
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: >-
+          node --experimental-strip-types scripts/release/notarize-mac.ts
+          --app-bundle "Emdash Orc.app"
+
+      - name: Verify signed application
+        working-directory: apps/emdash-desktop
+        run: |
+          codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Emdash Orc.app"
+          spctl --assess --type execute --verbose=2 "release/mac-arm64/Emdash Orc.app"
+
+      - name: Publish GitHub prerelease
+        working-directory: apps/emdash-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          assets=(
+            release/emdash-orc-arm64.dmg
+            release/emdash-orc-arm64.zip
+            release/orc-mac.yml
+          )
+          if [[ -f release/emdash-orc-arm64.zip.blockmap ]]; then
+            assets+=(release/emdash-orc-arm64.zip.blockmap)
+          fi
+          gh release create "$TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Emdash Orc $VERSION" \
+            --notes "Signed macOS build from phase-4-orchestrator-thread." \
+            --prerelease
