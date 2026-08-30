@@ -18,4 +18,17 @@ describe('parseOrchestratedWorkRequest', () => {
   it('does not intercept ordinary conversation', () => {
     expect(parseOrchestratedWorkRequest('How should we implement dark mode?')).toBeUndefined();
   });
+
+  it('accepts the leading blockquote marker produced when a quoted example is pasted', () => {
+    expect(
+      parseOrchestratedWorkRequest(
+        '> Create a work session in BookScape on the ThinkCenter to add a README note. Use Codex and verify the change before completing it.'
+      )
+    ).toMatchObject({
+      projectName: 'BookScape',
+      hostName: 'ThinkCenter',
+      goal: 'add a README note',
+      agent: 'codex',
+    });
+  });
 });

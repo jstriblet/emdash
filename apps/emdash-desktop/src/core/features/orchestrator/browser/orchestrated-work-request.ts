@@ -13,7 +13,7 @@ export type OrchestratedWorkRequest = {
 };
 
 const REQUEST_PATTERN =
-  /^create (?:a )?work session in (.+?) on (?:the )?(.+?) to (.+?)(?:\.\s+use (codex|claude)(?:\s+and\s+.*)?)?\.?$/i;
+  /^(?:>\s*)?create (?:a )?work session in (.+?) on (?:the )?(.+?) to (.+?)(?:\.\s+use (codex|claude)(?:\s+and\s+.*)?)?\.?$/i;
 
 export function parseOrchestratedWorkRequest(text: string): OrchestratedWorkRequest | undefined {
   const match = REQUEST_PATTERN.exec(text.trim());
