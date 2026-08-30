@@ -24,6 +24,13 @@ export type WorkspaceWireControllerDeps = {
 
 const defaultStartedAt = Date.now();
 const defaultDaemonId = crypto.randomUUID();
+const ansiEscapePattern =
+  /\u001B(?:\][^\u0007]*(?:\u0007|\u001B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g;
+
+function cleanWorkerText(value: string): string {
+  return value.replace(ansiEscapePattern, '').replace(/\r/g, '').trim();
+}
+
 export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps) {
   const appVersion = deps.appVersion ?? '0.0.0';
   const daemonId = deps.daemonId ?? defaultDaemonId;
@@ -101,6 +108,19 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     return workspaceDeleted.success ? ok(undefined) : orchestrationFailure(workspaceDeleted.error);
   };
 
+  const archiveOrcExecution = async (executionId: string, conversationId: string) => {
+    const archived = await archiveExecution(executionId);
+    await fetch(`http://127.0.0.1:8790/workers/${encodeURIComponent(executionId)}/archived`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        success: archived.success,
+        detail: archived.success ? null : archived.error.message,
+      }),
+    });
+    if (archived.success) orcExecutions.delete(conversationId);
+  };
+
   const publishOrcTransitions = async () => {
     for (const [executionId, projectId] of pendingOrcExecutions) {
       const found = await findManualRun(executionId);
@@ -115,7 +135,9 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       execution.lastStatus = state.status;
       if (!['awaiting-input', 'completed', 'error'].includes(state.status)) continue;
       const output = await deps.runtimes.tuiAgents.output.handle({ conversationId }).snapshot();
-      const message = state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000);
+      const message = cleanWorkerText(
+        state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000)
+      );
       const completedWithQuestion = state.status === 'completed' && message.trimEnd().endsWith('?');
       const status =
         state.status === 'awaiting-input' || completedWithQuestion
@@ -130,6 +152,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             emdash_task_id: execution.executionId,
+            execution_id: execution.executionId,
             project_id: execution.projectId,
             conversation_id: conversationId,
             provider: state.providerId,
@@ -141,21 +164,16 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         }
       );
       if (!response.ok || status !== 'completed') continue;
-      const directive = (await response.json()) as { action?: string };
+      const directive = (await response.json()) as { action?: string; archive_delay_ms?: number };
       if (directive.action !== 'archive') continue;
-      const archived = await archiveExecution(execution.executionId);
-      await fetch(
-        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/archived`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            success: archived.success,
-            detail: archived.success ? null : archived.error.message,
-          }),
-        }
-      );
-      if (archived.success) orcExecutions.delete(conversationId);
+      const archiveDelayMs = Math.max(0, Math.min(directive.archive_delay_ms ?? 0, 60_000));
+      if (archiveDelayMs === 0) {
+        await archiveOrcExecution(execution.executionId, conversationId);
+      } else {
+        setTimeout(() => {
+          void archiveOrcExecution(execution.executionId, conversationId);
+        }, archiveDelayMs);
+      }
     }
   };
 

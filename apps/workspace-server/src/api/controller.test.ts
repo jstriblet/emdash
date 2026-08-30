@@ -130,7 +130,10 @@ describe('createWorkspaceWireController', () => {
         requests.push({ url, body });
         return {
           ok: true,
-          json: async () => ({ action: body.status === 'completed' ? 'archive' : null }),
+          json: async () => ({
+            action: body.status === 'completed' ? 'archive' : null,
+            archive_delay_ms: body.status === 'completed' ? 50 : undefined,
+          }),
         };
       })
     );
@@ -165,12 +168,20 @@ describe('createWorkspaceWireController', () => {
     state = {
       ...state,
       status: 'completed',
-      lastAssistantMessage: 'Created and verified the requested file.',
+      lastAssistantMessage: '\u001b[38;5;6mCreated and verified the requested file.\u001b[0m\r',
       updatedAt: 4,
     };
     notify();
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(tuiAgents.delete).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[1]?.body.status).toBe('completed');
+    expect(requests[1]?.body.prompt_excerpt).toBe('Created and verified the requested file.');
+    expect(requests[1]?.body).toMatchObject({
+      execution_id: 'exec-push',
+      conversation_id: 'conversation-push',
+      project_id: '/home/user/src/bookscape',
+    });
     expect(requests[2]?.url).toContain('/workers/exec-push/archived');
     expect(tuiAgents.delete).toHaveBeenCalledWith({ conversationId: 'conversation-push' });
     expect(workspaceRegistry.deleteWorktree).toHaveBeenCalledWith({

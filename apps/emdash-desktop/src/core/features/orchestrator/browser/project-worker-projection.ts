@@ -18,7 +18,9 @@ const projectCreationAttempts = new Set<string>();
 const linkedConversations = new Set<string>();
 const openedConversations = new Set<string>();
 const reportedProjectionStages = new Set<string>();
+const terminalProjectionFirstObservedAt = new Map<string, number>();
 const REFRESH_INTERVAL_MS = 2_000;
+const TERMINAL_PROJECTION_GRACE_MS = 10_000;
 const CONVERSATION_ADOPTION_ATTEMPTS = 40;
 const CONVERSATION_ADOPTION_RETRY_MS = 250;
 
@@ -117,6 +119,10 @@ async function closeTerminalProjection(contract: OrchestratorWorkContract): Prom
   const taskManager = getTaskManagerStore(project.id);
   const task = taskManager?.tasks.get(contract.task_id);
   if (!task || !taskManager) return;
+  const firstObservedAt = terminalProjectionFirstObservedAt.get(contract.task_id) ?? Date.now();
+  terminalProjectionFirstObservedAt.set(contract.task_id, firstObservedAt);
+  if (Date.now() - firstObservedAt < TERMINAL_PROJECTION_GRACE_MS) return;
+  terminalProjectionFirstObservedAt.delete(contract.task_id);
   if (task.state === 'unregistered') {
     runInAction(() => taskManager.tasks.delete(contract.task_id));
     return;
@@ -138,217 +144,219 @@ export async function projectOrcWorkersIntoTasks(
   const projects = getProjectManagerStore();
   await projects.load();
 
-  for (const contract of contracts) {
-    const execution = contract.executions.at(-1);
-    await closeTerminalProjection(contract);
-    // Completed workers have already been verified and archived on the host. Their
-    // workspace records may no longer exist, so replaying them into a fresh desktop
-    // would create a task that can never resolve its selected workspace.
-    if (!execution?.worktree_path || isTerminal(contract)) {
-      continue;
-    }
+  await Promise.all(
+    contracts.map(async (contract) => {
+      const execution = contract.executions.at(-1);
+      await closeTerminalProjection(contract);
+      // Completed workers have already been verified and archived on the host. Their
+      // workspace records may no longer exist, so replaying them into a fresh desktop
+      // would create a task that can never resolve its selected workspace.
+      if (!execution?.worktree_path || isTerminal(contract)) {
+        return;
+      }
 
-    await reportProjectionStage(
-      execution.execution_id,
-      'Desktop projection discovery',
-      'completed',
-      contract.task_id
-    );
+      await reportProjectionStage(
+        execution.execution_id,
+        'Desktop projection discovery',
+        'completed',
+        contract.task_id
+      );
 
-    const project = await findOrCreateProject(execution.project_id, execution.host_id);
-    if (!project?.data || project.data.type !== 'ssh') {
+      const project = await findOrCreateProject(execution.project_id, execution.host_id);
+      if (!project?.data || project.data.type !== 'ssh') {
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop project resolution',
+          'failed',
+          `${execution.host_id}:${execution.project_id}`
+        );
+        return;
+      }
       await reportProjectionStage(
         execution.execution_id,
         'Desktop project resolution',
-        'failed',
-        `${execution.host_id}:${execution.project_id}`
+        'completed',
+        project.id
       );
-      continue;
-    }
-    await reportProjectionStage(
-      execution.execution_id,
-      'Desktop project resolution',
-      'completed',
-      project.id
-    );
-    if (projectionAttempts.has(contract.task_id)) {
-      continue;
-    }
-    const connectionId = project.data.connectionId;
+      if (projectionAttempts.has(contract.task_id)) {
+        return;
+      }
+      const connectionId = project.data.connectionId;
 
-    const taskManager = getTaskManagerStore(project.id);
-    if (!taskManager) {
+      const taskManager = getTaskManagerStore(project.id);
+      if (!taskManager) {
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop task manager resolution',
+          'failed',
+          project.id
+        );
+        return;
+      }
       await reportProjectionStage(
         execution.execution_id,
         'Desktop task manager resolution',
-        'failed',
+        'completed',
         project.id
       );
-      continue;
-    }
-    await reportProjectionStage(
-      execution.execution_id,
-      'Desktop task manager resolution',
-      'completed',
-      project.id
-    );
 
-    projectionAttempts.add(contract.task_id);
-    try {
-      let task = taskManager.tasks.get(contract.task_id);
-      if (!task) {
-        const workspace = await (
-          await getWorkspaceRegistryWireClient()
-        ).createWorkspace({
-          host: hostRef('remote', connectionId),
-          path: execution.worktree_path,
-        });
-        if (!workspace.success) {
+      projectionAttempts.add(contract.task_id);
+      try {
+        let task = taskManager.tasks.get(contract.task_id);
+        if (!task) {
+          const workspace = await (
+            await getWorkspaceRegistryWireClient()
+          ).createWorkspace({
+            host: hostRef('remote', connectionId),
+            path: execution.worktree_path,
+          });
+          if (!workspace.success) {
+            await reportProjectionStage(
+              execution.execution_id,
+              'Desktop workspace claim',
+              'failed',
+              JSON.stringify(workspace.error)
+            );
+            log.debug('Orc workspace could not be claimed by the desktop', {
+              taskId: contract.task_id,
+              workspacePath: execution.worktree_path,
+              error: workspace.error,
+            });
+            return;
+          }
           await reportProjectionStage(
             execution.execution_id,
             'Desktop workspace claim',
-            'failed',
-            JSON.stringify(workspace.error)
+            'completed',
+            workspace.data.id
           );
-          log.debug('Orc workspace could not be claimed by the desktop', {
-            taskId: contract.task_id,
-            workspacePath: execution.worktree_path,
-            error: workspace.error,
-          });
-          continue;
-        }
-        await reportProjectionStage(
-          execution.execution_id,
-          'Desktop workspace claim',
-          'completed',
-          workspace.data.id
-        );
 
-        const created = await (
-          await getTasksWireClient()
-        ).createTask({
-          id: contract.task_id,
-          projectId: project.id,
-          taskConfig: {
-            version: '1',
-            name: taskName(contract),
-            initialStatus: taskStatus(contract),
-          },
-          workspaceConfig: {
-            version: '2',
-            git: { kind: 'none' },
-            workspace: {
-              kind: 'repository-instance',
-              workspaceId: workspace.data.id,
+          const created = await (
+            await getTasksWireClient()
+          ).createTask({
+            id: contract.task_id,
+            projectId: project.id,
+            taskConfig: {
+              version: '1',
+              name: taskName(contract),
+              initialStatus: taskStatus(contract),
             },
-          },
-        });
-        if (!created.success) {
+            workspaceConfig: {
+              version: '2',
+              git: { kind: 'none' },
+              workspace: {
+                kind: 'repository-instance',
+                workspaceId: workspace.data.id,
+              },
+            },
+          });
+          if (!created.success) {
+            await reportProjectionStage(
+              execution.execution_id,
+              'Desktop task projection',
+              'failed',
+              JSON.stringify(created.error)
+            );
+            log.debug('Orc workspace is not ready for project-rail projection', {
+              taskId: contract.task_id,
+              projectPath: execution.project_id,
+              error: created.error,
+            });
+            return;
+          }
           await reportProjectionStage(
             execution.execution_id,
             'Desktop task projection',
-            'failed',
-            JSON.stringify(created.error)
+            'completed',
+            contract.task_id
           );
-          log.debug('Orc workspace is not ready for project-rail projection', {
-            taskId: contract.task_id,
-            projectPath: execution.project_id,
-            error: created.error,
-          });
-          continue;
+          task = taskManager.tasks.get(contract.task_id);
         }
-        await reportProjectionStage(
-          execution.execution_id,
-          'Desktop task projection',
-          'completed',
-          contract.task_id
-        );
-        task = taskManager.tasks.get(contract.task_id);
-      }
 
-      const status = taskStatus(contract);
-      if (task?.data.status !== status) await task?.updateStatus(status);
+        const status = taskStatus(contract);
+        if (task?.data.status !== status) await task?.updateStatus(status);
 
-      if (execution.session_id && !linkedConversations.has(execution.session_id)) {
-        const conversations = await getConversationsClient();
-        let adopted = false;
-        for (let attempt = 0; attempt < CONVERSATION_ADOPTION_ATTEMPTS; attempt += 1) {
-          adopted = await conversations.adoptHostConversation({
-            host: hostRef('remote', connectionId),
-            conversationId: execution.session_id,
-            projectId: project.id,
-            taskId: contract.task_id,
-          });
-          if (adopted) break;
-          await delay(CONVERSATION_ADOPTION_RETRY_MS);
-        }
-        if (!adopted) {
+        if (execution.session_id && !linkedConversations.has(execution.session_id)) {
+          const conversations = await getConversationsClient();
+          let adopted = false;
+          for (let attempt = 0; attempt < CONVERSATION_ADOPTION_ATTEMPTS; attempt += 1) {
+            adopted = await conversations.adoptHostConversation({
+              host: hostRef('remote', connectionId),
+              conversationId: execution.session_id,
+              projectId: project.id,
+              taskId: contract.task_id,
+            });
+            if (adopted) break;
+            await delay(CONVERSATION_ADOPTION_RETRY_MS);
+          }
+          if (!adopted) {
+            await reportProjectionStage(
+              execution.execution_id,
+              'Desktop conversation adoption',
+              'failed',
+              `Host conversation ${execution.session_id} was absent from the authoritative snapshot`
+            );
+            throw new Error(`Host conversation ${execution.session_id} was not found`);
+          }
           await reportProjectionStage(
             execution.execution_id,
             'Desktop conversation adoption',
-            'failed',
-            `Host conversation ${execution.session_id} was absent from the authoritative snapshot`
-          );
-          throw new Error(`Host conversation ${execution.session_id} was not found`);
-        }
-        await reportProjectionStage(
-          execution.execution_id,
-          'Desktop conversation adoption',
-          'completed',
-          execution.session_id
-        );
-        linkedConversations.add(execution.session_id);
-      }
-      if (execution.session_id && !openedConversations.has(execution.session_id)) {
-        const conversationManager = getConversationsForTask(contract.task_id);
-        let conversation = conversationManager?.conversations.get(execution.session_id);
-        if (conversationManager && !conversation) {
-          await conversationManager.list.load();
-          conversation = conversationManager.conversations.get(execution.session_id);
-        }
-        const taskView = getTaskComposition(project.id, contract.task_id);
-        if (conversation && taskView) {
-          taskView.paneLayout.open(
-            'conversation',
-            { conversationId: execution.session_id },
-            { preview: false }
-          );
-          taskView.setFocusedRegion('main');
-          openedConversations.add(execution.session_id);
-          await reportProjectionStage(
-            execution.execution_id,
-            'Desktop conversation pane',
             'completed',
             execution.session_id
           );
-        } else {
-          await reportProjectionStage(
-            execution.execution_id,
-            'Desktop conversation pane',
-            'started',
-            JSON.stringify({
-              conversationHydrated: Boolean(conversation),
-              taskCompositionMounted: Boolean(taskView),
-            })
-          );
+          linkedConversations.add(execution.session_id);
         }
+        if (execution.session_id && !openedConversations.has(execution.session_id)) {
+          const conversationManager = getConversationsForTask(contract.task_id);
+          let conversation = conversationManager?.conversations.get(execution.session_id);
+          if (conversationManager && !conversation) {
+            await conversationManager.list.load();
+            conversation = conversationManager.conversations.get(execution.session_id);
+          }
+          const taskView = getTaskComposition(project.id, contract.task_id);
+          if (conversation && taskView) {
+            taskView.paneLayout.open(
+              'conversation',
+              { conversationId: execution.session_id },
+              { preview: false }
+            );
+            taskView.setFocusedRegion('main');
+            openedConversations.add(execution.session_id);
+            await reportProjectionStage(
+              execution.execution_id,
+              'Desktop conversation pane',
+              'completed',
+              execution.session_id
+            );
+          } else {
+            await reportProjectionStage(
+              execution.execution_id,
+              'Desktop conversation pane',
+              'started',
+              JSON.stringify({
+                conversationHydrated: Boolean(conversation),
+                taskCompositionMounted: Boolean(taskView),
+              })
+            );
+          }
+        }
+      } catch (error) {
+        await reportProjectionStage(
+          execution.execution_id,
+          'Desktop worker projection',
+          'failed',
+          error instanceof Error ? error.message : String(error)
+        );
+        log.warn('Unable to project Orc worker into the project rail yet', {
+          taskId: contract.task_id,
+          projectPath: execution.project_id,
+          error,
+        });
+      } finally {
+        projectionAttempts.delete(contract.task_id);
       }
-    } catch (error) {
-      await reportProjectionStage(
-        execution.execution_id,
-        'Desktop worker projection',
-        'failed',
-        error instanceof Error ? error.message : String(error)
-      );
-      log.warn('Unable to project Orc worker into the project rail yet', {
-        taskId: contract.task_id,
-        projectPath: execution.project_id,
-        error,
-      });
-    } finally {
-      projectionAttempts.delete(contract.task_id);
-    }
-  }
+    })
+  );
 }
 
 /** Keeps server-owned Orc runs projected into the ordinary project rail. */
