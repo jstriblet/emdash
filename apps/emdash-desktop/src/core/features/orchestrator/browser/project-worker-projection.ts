@@ -58,6 +58,13 @@ function parentPath(path: string): string {
   return path.replace(/\/+$/, '').split('/').slice(0, -1).join('/');
 }
 
+export function shouldAdoptHostConversation(
+  wasPreviouslyLinked: boolean,
+  isCurrentlyHydrated: boolean
+): boolean {
+  return !wasPreviouslyLinked || !isCurrentlyHydrated;
+}
+
 export function selectProjectionMachineId(
   machines: readonly {
     id: string;
@@ -313,35 +320,53 @@ export async function projectOrcWorkersIntoTasks(
         const status = taskStatus(contract);
         if (task?.data.status !== status) await task?.updateStatus(status);
 
-        if (execution.session_id && !linkedConversations.has(execution.session_id)) {
-          const conversations = await getConversationsClient();
-          let adopted = false;
-          for (let attempt = 0; attempt < CONVERSATION_ADOPTION_ATTEMPTS; attempt += 1) {
-            adopted = await conversations.adoptHostConversation({
-              host: hostRef('remote', connectionId),
-              conversationId: execution.session_id,
-              projectId: project.id,
-              taskId: contract.task_id,
-            });
-            if (adopted) break;
-            await delay(CONVERSATION_ADOPTION_RETRY_MS);
+        if (execution.session_id) {
+          const conversationManager = getConversationsForTask(contract.task_id);
+          let conversation = conversationManager?.conversations.get(execution.session_id);
+          if (conversationManager && !conversation) {
+            await conversationManager.list.load();
+            conversation = conversationManager.conversations.get(execution.session_id);
           }
-          if (!adopted) {
+
+          const shouldAdopt = shouldAdoptHostConversation(
+            linkedConversations.has(execution.session_id),
+            Boolean(conversation)
+          );
+          if (shouldAdopt) {
+            // The authoritative host snapshot can reset while the desktop remains alive (for
+            // example, after a workspace-server restart). In that case these process-local
+            // caches are stale and the conversation must be adopted and opened again.
+            linkedConversations.delete(execution.session_id);
+            openedConversations.delete(execution.session_id);
+            const conversations = await getConversationsClient();
+            let adopted = false;
+            for (let attempt = 0; attempt < CONVERSATION_ADOPTION_ATTEMPTS; attempt += 1) {
+              adopted = await conversations.adoptHostConversation({
+                host: hostRef('remote', connectionId),
+                conversationId: execution.session_id,
+                projectId: project.id,
+                taskId: contract.task_id,
+              });
+              if (adopted) break;
+              await delay(CONVERSATION_ADOPTION_RETRY_MS);
+            }
+            if (!adopted) {
+              await reportProjectionStage(
+                execution.execution_id,
+                'Desktop conversation adoption',
+                'failed',
+                `Host conversation ${execution.session_id} was absent from the authoritative snapshot`
+              );
+              throw new Error(`Host conversation ${execution.session_id} was not found`);
+            }
             await reportProjectionStage(
               execution.execution_id,
               'Desktop conversation adoption',
-              'failed',
-              `Host conversation ${execution.session_id} was absent from the authoritative snapshot`
+              'completed',
+              execution.session_id
             );
-            throw new Error(`Host conversation ${execution.session_id} was not found`);
+            linkedConversations.add(execution.session_id);
           }
-          await reportProjectionStage(
-            execution.execution_id,
-            'Desktop conversation adoption',
-            'completed',
-            execution.session_id
-          );
-          linkedConversations.add(execution.session_id);
         }
         if (execution.session_id && !openedConversations.has(execution.session_id)) {
           const conversationManager = getConversationsForTask(contract.task_id);

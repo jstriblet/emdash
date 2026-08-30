@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { selectProjectionMachineId } from './project-worker-projection';
+import {
+  selectProjectionMachineId,
+  shouldAdoptHostConversation,
+} from './project-worker-projection';
 
 describe('selectProjectionMachineId', () => {
   const machines = [
@@ -39,5 +42,15 @@ describe('selectProjectionMachineId', () => {
         'thinkcenter'
       )
     ).toBe('thinkcenter');
+  });
+});
+
+describe('shouldAdoptHostConversation', () => {
+  it('re-adopts a conversation when a server restart invalidates the local projection', () => {
+    expect(shouldAdoptHostConversation(true, false)).toBe(true);
+  });
+
+  it('does not re-adopt a conversation that remains hydrated', () => {
+    expect(shouldAdoptHostConversation(true, true)).toBe(false);
   });
 });
