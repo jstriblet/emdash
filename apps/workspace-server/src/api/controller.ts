@@ -138,7 +138,9 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       const message = cleanWorkerText(
         state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000)
       );
-      const completedWithQuestion = state.status === 'completed' && message.trimEnd().endsWith('?');
+      const completedWithQuestion =
+        state.status === 'completed' &&
+        (message.trimEnd().endsWith('?') || /\?\s+›\s+Ask Codex/.test(message));
       const status =
         state.status === 'awaiting-input' || completedWithQuestion
           ? 'blocked'
@@ -163,6 +165,13 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           }),
         }
       );
+      if (response.ok && status === 'blocked') {
+        void fetch('http://127.0.0.1:8790/message', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ surface: 'terminal', text: message }),
+        }).catch(() => undefined);
+      }
       if (!response.ok || status !== 'completed') continue;
       const directive = (await response.json()) as { action?: string; archive_delay_ms?: number };
       if (directive.action !== 'archive') continue;
