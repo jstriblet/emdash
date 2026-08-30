@@ -31,6 +31,8 @@ type ProgressReporter = (
 ) => void | Promise<void>;
 
 const STAGE_TIMEOUT_MS = 45_000;
+const HOST_READY_RETRY_MS = 500;
+const HOST_READY_TIMEOUT_MS = 40_000;
 
 type OrchestratedProjectType = { type: 'local' } | { type: 'ssh'; connectionId: string };
 
@@ -300,17 +302,40 @@ async function discoverProjectPath(
     projectType.type === 'ssh'
       ? { type: 'ssh' as const, connectionId: projectType.connectionId }
       : { type: 'local' as const };
-  const home = await client.getHostHomeDir(host);
+  const home = await withHostReadinessRetry(() => client.getHostHomeDir(host));
 
   for (const path of projectPathCandidates(home, projectName)) {
-    const inspection = await client.inspectProjectPath(
-      projectType.type === 'ssh'
-        ? { type: 'ssh', connectionId: projectType.connectionId, path }
-        : { type: 'local', path }
+    const inspection = await withHostReadinessRetry(() =>
+      client.inspectProjectPath(
+        projectType.type === 'ssh'
+          ? { type: 'ssh', connectionId: projectType.connectionId, path }
+          : { type: 'local', path }
+      )
     );
     if (!inspection.error && inspection.isDirectory && inspection.isGitRepo) return path;
   }
   return undefined;
+}
+
+export async function withHostReadinessRetry<T>(
+  operation: () => Promise<T>,
+  timeoutMs = HOST_READY_TIMEOUT_MS,
+  retryMs = HOST_READY_RETRY_MS
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      return await operation();
+    } catch (cause) {
+      if (!isHostPreparingError(cause) || Date.now() + retryMs > deadline) throw cause;
+      await new Promise<void>((resolve) => setTimeout(resolve, retryMs));
+    }
+  }
+}
+
+function isHostPreparingError(cause: unknown): boolean {
+  if (!(cause instanceof Error)) return false;
+  return /host (?:connection|runtime) (?:failed|is not ready|is unavailable)/i.test(cause.message);
 }
 
 export function projectPathCandidates(home: string, projectName: string): string[] {

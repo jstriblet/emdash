@@ -5,6 +5,7 @@ import {
   projectPathCandidates,
   runStage,
   sshConfigHostToConnection,
+  withHostReadinessRetry,
 } from './orchestrated-work-request';
 
 describe('parseOrchestratedWorkRequest', () => {
@@ -120,5 +121,31 @@ describe('SSH config host discovery', () => {
       authType: 'key',
       useAgent: false,
     });
+  });
+});
+
+describe('withHostReadinessRetry', () => {
+  it('waits for a preparing remote workspace to become ready', async () => {
+    vi.useFakeTimers();
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('Host connection failed'))
+      .mockResolvedValue('/home/striblet');
+    const result = withHostReadinessRetry(operation, 2_000, 100);
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(result).resolves.toBe('/home/striblet');
+    expect(operation).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('does not retry a permanent repository error', async () => {
+    const operation = vi.fn().mockRejectedValue(new Error('Permission denied'));
+
+    await expect(withHostReadinessRetry(operation, 2_000, 100)).rejects.toThrow(
+      'Permission denied'
+    );
+    expect(operation).toHaveBeenCalledOnce();
   });
 });
