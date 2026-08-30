@@ -17,4 +17,14 @@ describe('workspaceServerRuntimePaths', () => {
     expect(paths.rootDirectory).toBe(root);
     expect(paths.stateDirectory).toBe(join(root, 'state'));
   });
+
+  it('can expose a control socket separately from persistent state', () => {
+    const paths = workspaceServerRuntimePaths(
+      '/tmp/emdash-orc-workspace.sock',
+      '/home/test/.emdash/workspace-server'
+    );
+
+    expect(paths.rootDirectory).toBe('/home/test/.emdash/workspace-server');
+    expect(paths.stateDirectory).toBe('/home/test/.emdash/workspace-server/state');
+  });
 });

@@ -15,10 +15,14 @@ export type WorkspaceServerRuntimePaths = {
   hostSettingsFile: string;
 };
 
-export function workspaceServerRuntimePaths(socketPath?: string): WorkspaceServerRuntimePaths {
+export function workspaceServerRuntimePaths(
+  socketPath?: string,
+  rootDirectoryOverride = process.env['EMDASH_WORKSPACE_SERVER_ROOT']
+): WorkspaceServerRuntimePaths {
   const socketDirectory = dirname(daemonPaths(socketPath).socketPath);
   const rootDirectory =
-    basename(socketDirectory) === 'run' ? dirname(socketDirectory) : socketDirectory;
+    rootDirectoryOverride ??
+    (basename(socketDirectory) === 'run' ? dirname(socketDirectory) : socketDirectory);
   const stateDirectory = join(rootDirectory, 'state');
 
   return {
