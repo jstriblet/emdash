@@ -2,6 +2,7 @@ import { Button, Resizable, toast, useCollapsiblePanelBinding } from '@emdash/ui
 import { Loader2 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState } from 'react';
+import { useWorkContractForTask } from '@core/features/orchestrator/api/browser/use-work-contract-for-task';
 import {
   getTaskManagerStore,
   getTaskStore,
@@ -345,7 +346,10 @@ const SIDEBAR_CLOSE_THRESHOLD = 8;
 const SIDEBAR_MIN_SIZE = '280px';
 
 const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
+  const { taskId } = useTaskViewContext();
   const taskView = useTaskComposition();
+  const workContract = useWorkContractForTask(taskId);
+  const [showWorkContract, setShowWorkContract] = useState(false);
   // Zen is workspace-chrome data; the task sidebar hides while zen is active
   // as a derived condition — no task-chrome mutation, no task-side restore.
   const { isZenActive } = useWorkspaceLayoutContext();
@@ -369,33 +373,66 @@ const ReadyTaskMainPanel = observer(function ReadyTaskMainPanel() {
   });
 
   return (
-    <taskTabView.TabLayoutProvider layout={taskView.paneLayout}>
-      <Resizable.Group
-        orientation="horizontal"
-        id="task-sidebar-layout"
-        {...sidebarBinding.groupProps}
-      >
-        <Resizable.Panel id="task-main-area">
-          <TaskMainColumn />
-        </Resizable.Panel>
-        {/* Collapsed = panel AND handle unmounted (sync contract: never
-            program the panels). */}
-        {isSidebarOpen && (
-          <>
-            <Resizable.Handle />
-            <Resizable.Panel
-              {...sidebarBinding.collapsiblePanelProps}
-              defaultSize={sidebarBinding.collapsiblePanelProps.defaultSize ?? '25%'}
-              minSize={SIDEBAR_MIN_SIZE}
-              maxSize="50%"
-              collapsible
-              collapsedSize="0%"
-            >
-              <TaskSidebar />
+    <div className="flex h-full min-h-0 flex-col">
+      {workContract && (
+        <div className="shrink-0 border-b border-border bg-background-secondary px-3 py-2 text-xs">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 text-left text-foreground-muted hover:text-foreground"
+            onClick={() => setShowWorkContract((visible) => !visible)}
+            aria-expanded={showWorkContract}
+          >
+            <span aria-hidden="true">{showWorkContract ? '▾' : '▸'}</span>
+            <span className="font-medium text-foreground">Work Contract</span>
+            <span className="truncate">{workContract.contract.goal}</span>
+            <span className="ml-auto shrink-0">{workContract.state}</span>
+          </button>
+          {showWorkContract && (
+            <div className="mt-2 grid gap-1 border-l border-border pl-4 text-foreground-muted">
+              {workContract.contract.acceptance_checks.map((check) => {
+                const state = workContract.checks.find((item) => item.check_id === check.id);
+                return (
+                  <div key={check.id} className="flex gap-2">
+                    <span>{state?.status === 'passed' ? '✓' : '○'}</span>
+                    <span>{check.description}</span>
+                    <span className="text-foreground-passive">{state?.status ?? 'pending'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <taskTabView.TabLayoutProvider layout={taskView.paneLayout}>
+          <Resizable.Group
+            orientation="horizontal"
+            id="task-sidebar-layout"
+            {...sidebarBinding.groupProps}
+          >
+            <Resizable.Panel id="task-main-area">
+              <TaskMainColumn />
             </Resizable.Panel>
-          </>
-        )}
-      </Resizable.Group>
-    </taskTabView.TabLayoutProvider>
+            {/* Collapsed = panel AND handle unmounted (sync contract: never
+                program the panels). */}
+            {isSidebarOpen && (
+              <>
+                <Resizable.Handle />
+                <Resizable.Panel
+                  {...sidebarBinding.collapsiblePanelProps}
+                  defaultSize={sidebarBinding.collapsiblePanelProps.defaultSize ?? '25%'}
+                  minSize={SIDEBAR_MIN_SIZE}
+                  maxSize="50%"
+                  collapsible
+                  collapsedSize="0%"
+                >
+                  <TaskSidebar />
+                </Resizable.Panel>
+              </>
+            )}
+          </Resizable.Group>
+        </taskTabView.TabLayoutProvider>
+      </div>
+    </div>
   );
 });
