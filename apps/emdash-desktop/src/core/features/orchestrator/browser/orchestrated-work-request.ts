@@ -20,7 +20,8 @@ const REQUEST_PATTERN =
   /^(?:>\s*)?create (?:a )?work session in (.+?) on (?:the )?(.+?) to (.+?)(?:\.\s+use (codex|claude)(?:\s+and\s+.*)?)?\.?$/i;
 
 export function parseOrchestratedWorkRequest(text: string): OrchestratedWorkRequest | undefined {
-  const match = REQUEST_PATTERN.exec(text.trim());
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  const match = REQUEST_PATTERN.exec(normalized);
   if (!match) return undefined;
   return {
     projectName: match[1].trim(),

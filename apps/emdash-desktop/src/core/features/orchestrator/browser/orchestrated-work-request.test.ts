@@ -37,4 +37,17 @@ describe('parseOrchestratedWorkRequest', () => {
       '/home/jonathan/src/bookscape'
     );
   });
+
+  it('parses a request wrapped across multiple lines', () => {
+    expect(
+      parseOrchestratedWorkRequest(
+        'Create a work session in BookScape on the ThinkCenter to add a README note. Use Codex and verify the change\n  before completing it.'
+      )
+    ).toMatchObject({
+      projectName: 'BookScape',
+      hostName: 'ThinkCenter',
+      goal: 'add a README note',
+      agent: 'codex',
+    });
+  });
 });
