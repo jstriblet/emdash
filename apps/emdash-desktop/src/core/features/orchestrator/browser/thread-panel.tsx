@@ -40,14 +40,16 @@ export function shouldFollowOrcThread(submittedTurnInFlight: boolean, distanceFr
 
 export function escapeCancelAction(
   isWorking: boolean,
-  confirmationVisible: boolean
-): 'ignore' | 'confirm' | 'cancel' {
+  confirmationVisible: boolean,
+  hasQueuedFollowUp = false
+): 'ignore' | 'confirm' | 'cancel' | 'send-queued' {
   if (!isWorking) return 'ignore';
+  if (hasQueuedFollowUp) return 'send-queued';
   return confirmationVisible ? 'cancel' : 'confirm';
 }
 
 export function workingStatus(elapsedSeconds: number): string {
-  return `Working… (${elapsedSeconds}s • esc to stop)`;
+  return `Working (${elapsedSeconds}s • esc to interrupt)`;
 }
 
 async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
@@ -139,6 +141,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [queuedFollowUps, setQueuedFollowUps] = useState<string[]>([]);
   const [workingElapsedSeconds, setWorkingElapsedSeconds] = useState(0);
   const [cancelConfirmationVisible, setCancelConfirmationVisible] = useState(false);
   const [workStage, setWorkStage] = useState<OrchestratedWorkStage>();
@@ -154,8 +157,9 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const activeMcpActionIdsRef = useRef(new Set<string>());
   const actionInFlightRef = useRef(false);
   const cancelConfirmationTimerRef = useRef<number | undefined>(undefined);
-  const sendGenerationRef = useRef(0);
   const activeSendRef = useRef<Promise<unknown> | undefined>(undefined);
+  const queuedFollowUpsRef = useRef<string[]>([]);
+  const messageLoopRunningRef = useRef(false);
   const isOrcWorking = sending || Boolean(health?.busy);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
@@ -457,43 +461,66 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     if (viewport) viewport.scrollTop = viewport.scrollHeight;
   }, [entries, sending, workStage]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    const generation = ++sendGenerationRef.current;
-    const isFollowUp = isOrcWorking;
-    submittedTurnInFlightRef.current = true;
-    shouldFollowThreadRef.current = true;
-    setSending(true);
-    setWorkStage(undefined);
-    setDraft('');
-    setError(undefined);
-    try {
-      const client = await getOrchestratorClient();
-      const previousSend = activeSendRef.current;
-      if (isFollowUp) {
-        await client.interrupt(undefined);
-        await previousSend?.catch(() => undefined);
+  const replaceQueuedFollowUps = useCallback((messages: string[]) => {
+    queuedFollowUpsRef.current = messages;
+    setQueuedFollowUps(messages);
+  }, []);
+
+  const runMessageLoop = useCallback(
+    async (initialText: string) => {
+      if (messageLoopRunningRef.current) {
+        replaceQueuedFollowUps([...queuedFollowUpsRef.current, initialText]);
+        return;
       }
-      const activeSend = client.send({ text });
-      activeSendRef.current = activeSend;
-      await activeSend;
-      if (activeSendRef.current === activeSend) activeSendRef.current = undefined;
-      await refresh();
-    } catch (cause) {
-      if (sendGenerationRef.current === generation) setDraft(text);
-      setError(cause instanceof Error ? cause.message : 'Message failed');
-    } finally {
-      if (sendGenerationRef.current === generation) {
+      messageLoopRunningRef.current = true;
+      let currentText: string | undefined = initialText;
+      submittedTurnInFlightRef.current = true;
+      shouldFollowThreadRef.current = true;
+      setSending(true);
+      setWorkStage(undefined);
+      setError(undefined);
+      try {
+        const client = await getOrchestratorClient();
+        while (currentText) {
+          const activeSend = client.send({ text: currentText });
+          activeSendRef.current = activeSend;
+          await activeSend;
+          if (activeSendRef.current === activeSend) activeSendRef.current = undefined;
+          await refresh();
+          const [next, ...remaining] = queuedFollowUpsRef.current;
+          replaceQueuedFollowUps(remaining);
+          currentText = next;
+        }
+      } catch (cause) {
+        if (currentText) replaceQueuedFollowUps([currentText, ...queuedFollowUpsRef.current]);
+        setError(cause instanceof Error ? cause.message : 'Message failed');
+      } finally {
+        activeSendRef.current = undefined;
+        messageLoopRunningRef.current = false;
         submittedTurnInFlightRef.current = false;
         setSending(false);
         setWorkStage(undefined);
       }
+    },
+    [refresh, replaceQueuedFollowUps]
+  );
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    submittedTurnInFlightRef.current = true;
+    shouldFollowThreadRef.current = true;
+    setDraft('');
+    setError(undefined);
+    if (isOrcWorking || messageLoopRunningRef.current) {
+      replaceQueuedFollowUps([...queuedFollowUpsRef.current, text]);
+      return;
     }
+    await runMessageLoop(text);
   }
 
-  async function interrupt() {
+  async function interrupt(preserveWorkingState = false) {
     if (cancelConfirmationTimerRef.current !== undefined) {
       window.clearTimeout(cancelConfirmationTimerRef.current);
       cancelConfirmationTimerRef.current = undefined;
@@ -501,9 +528,11 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     setCancelConfirmationVisible(false);
     try {
       await (await getOrchestratorClient()).interrupt(undefined);
-      submittedTurnInFlightRef.current = false;
-      setSending(false);
-      setWorkStage(undefined);
+      if (!preserveWorkingState) {
+        submittedTurnInFlightRef.current = false;
+        setSending(false);
+        setWorkStage(undefined);
+      }
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to stop Orc');
@@ -518,7 +547,15 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     const stopOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.repeat) return;
       event.preventDefault();
-      const action = escapeCancelAction(isOrcWorking, cancelConfirmationVisible);
+      const action = escapeCancelAction(
+        isOrcWorking,
+        cancelConfirmationVisible,
+        queuedFollowUpsRef.current.length > 0
+      );
+      if (action === 'send-queued') {
+        void interrupt(true);
+        return;
+      }
       if (action === 'confirm') {
         setCancelConfirmationVisible(true);
         if (cancelConfirmationTimerRef.current !== undefined) {
@@ -535,6 +572,15 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     window.addEventListener('keydown', stopOnEscape);
     return () => window.removeEventListener('keydown', stopOnEscape);
   });
+
+  useEffect(() => {
+    if (health?.busy || messageLoopRunningRef.current || queuedFollowUpsRef.current.length === 0) {
+      return;
+    }
+    const [next, ...remaining] = queuedFollowUpsRef.current;
+    replaceQueuedFollowUps(remaining);
+    if (next) void runMessageLoop(next);
+  }, [health?.busy, replaceQueuedFollowUps, runMessageLoop]);
 
   useEffect(() => {
     if (!isOrcWorking) {
@@ -719,9 +765,25 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                 <span>•</span>
                 <span>
                   {workStage
-                    ? `${workStage}… (${workingElapsedSeconds}s • esc to stop)`
+                    ? `${workStage} (${workingElapsedSeconds}s • esc to interrupt)`
                     : workingStatus(workingElapsedSeconds)}
                 </span>
+              </div>
+            )}
+            {queuedFollowUps.length > 0 && (
+              <div className="mb-6 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
+                <span>•</span>
+                <div>
+                  <div>
+                    Messages to be submitted after this turn (press esc to interrupt and send
+                    immediately)
+                  </div>
+                  {queuedFollowUps.map((message, index) => (
+                    <div key={`${index}:${message}`} className="mt-1 pl-2 text-[#b6b0a7]">
+                      ↳ {message}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             {cancelConfirmationVisible && (

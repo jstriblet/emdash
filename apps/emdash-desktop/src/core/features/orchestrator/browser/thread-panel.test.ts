@@ -24,6 +24,10 @@ describe('escapeCancelAction', () => {
     expect(escapeCancelAction(true, true)).toBe('cancel');
   });
 
+  it('interrupts immediately when a follow-up is queued', () => {
+    expect(escapeCancelAction(true, false, true)).toBe('send-queued');
+  });
+
   it('ignores Escape while Orc is idle', () => {
     expect(escapeCancelAction(false, false)).toBe('ignore');
   });
@@ -31,6 +35,6 @@ describe('escapeCancelAction', () => {
 
 describe('workingStatus', () => {
   it('matches the Codex elapsed-time status style', () => {
-    expect(workingStatus(12)).toBe('Working… (12s • esc to stop)');
+    expect(workingStatus(12)).toBe('Working (12s • esc to interrupt)');
   });
 });
