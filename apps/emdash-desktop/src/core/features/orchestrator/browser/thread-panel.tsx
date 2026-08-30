@@ -257,7 +257,7 @@ export function ThreadPanel() {
             } catch (cause) {
               promptExcerpt = `Unable to read worker terminal: ${cause instanceof Error ? cause.message : String(cause)}`;
             }
-            await client.reportWorkerTelemetry({
+            const telemetry = {
               executionId: execution.execution_id,
               emdashTaskId: execution.emdash_task_id,
               projectId: execution.project_id,
@@ -271,7 +271,27 @@ export function ThreadPanel() {
               notificationType: liveConversation?.lastNotificationType,
               promptExcerpt,
               observedAt: new Date().toISOString(),
-            });
+            };
+            try {
+              await client.reportWorkerTelemetry(telemetry);
+            } catch {
+              await client.reportActionProgress({
+                actionId: execution.execution_id,
+                stage: 'Worker telemetry',
+                status: 'completed',
+                detail: JSON.stringify({
+                  emdash_task_id: telemetry.emdashTaskId,
+                  project_id: telemetry.projectId,
+                  conversation_id: telemetry.conversationId,
+                  session_id: telemetry.sessionId,
+                  provider: telemetry.provider,
+                  status: telemetry.status,
+                  notification_type: telemetry.notificationType,
+                  prompt_excerpt: telemetry.promptExcerpt,
+                  observed_at: telemetry.observedAt,
+                }),
+              });
+            }
           })
         );
       } catch {
