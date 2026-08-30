@@ -5,7 +5,7 @@ import { orchestratorViewDef } from '../contributions/views';
 import { ThreadPanel } from './thread-panel';
 
 function OrchestratorTitlebar() {
-  return <Titlebar leftSlot={<span className="px-2 text-sm font-medium">Thread</span>} />;
+  return <Titlebar leftSlot={<span className="px-2 text-sm font-medium">Orc</span>} />;
 }
 
 function OrchestratorView() {

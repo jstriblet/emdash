@@ -31,6 +31,17 @@ function cleanWorkerText(value: string): string {
   return value.replace(ansiEscapePattern, '').replace(/\r/g, '').trim();
 }
 
+export function isInteractiveTerminalPrompt(value: string): boolean {
+  const compact = cleanWorkerText(value)
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9?]/g, '');
+  return (
+    (compact.includes('quicksafetycheck') && compact.includes('entertoconfirm')) ||
+    compact.endsWith('pressentertocontinue') ||
+    compact.endsWith('continue?yn')
+  );
+}
+
 export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps) {
   const appVersion = deps.appVersion ?? '0.0.0';
   const daemonId = deps.daemonId ?? defaultDaemonId;
@@ -40,7 +51,72 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     { executionId: string; projectId: string; lastStatus?: string }
   >();
   const pendingOrcExecutions = new Map<string, string>();
+  const watchedOrcConversations = new Set<string>();
+  const pushedPromptFingerprints = new Map<string, string>();
   let orcMessageQueue = Promise.resolve();
+
+  const pushBlockedPrompt = async (
+    conversationId: string,
+    execution: { executionId: string; projectId: string },
+    message: string,
+    provider?: string
+  ) => {
+    const fingerprint = crypto.createHash('sha256').update(message).digest('hex');
+    if (pushedPromptFingerprints.get(execution.executionId) === fingerprint) return;
+    pushedPromptFingerprints.set(execution.executionId, fingerprint);
+    const response = await fetch(
+      `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          emdash_task_id: execution.executionId,
+          execution_id: execution.executionId,
+          project_id: execution.projectId,
+          conversation_id: conversationId,
+          provider,
+          status: 'blocked',
+          notification_type: 'elicitation_dialog',
+          prompt_excerpt: message,
+          observed_at: new Date().toISOString(),
+        }),
+      }
+    );
+    if (!response.ok) return;
+    orcMessageQueue = orcMessageQueue
+      .then(async () => {
+        await fetch('http://127.0.0.1:8790/message', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ surface: 'terminal', text: message }),
+        });
+      })
+      .catch(() => undefined);
+  };
+
+  const watchInteractiveTerminalPrompts = (
+    conversationId: string,
+    execution: { executionId: string; projectId: string }
+  ) => {
+    if (!deps.enableOrcCallbacks || watchedOrcConversations.has(conversationId)) return;
+    watchedOrcConversations.add(conversationId);
+    const output = deps.runtimes.tuiAgents.output.handle({ conversationId });
+    void output.asLiveSource().subscribe(() => {
+      void output.snapshot().then(async (snapshot) => {
+        const message = cleanWorkerText(snapshot.data.text.slice(-4000));
+        if (!isInteractiveTerminalPrompt(message)) return;
+        const states = await deps.runtimes.tuiAgents.agentStates
+          .state(undefined, 'list')
+          .snapshot();
+        await pushBlockedPrompt(
+          conversationId,
+          execution,
+          message,
+          states.data[conversationId]?.providerId
+        );
+      });
+    });
+  };
 
   const findManualRun = async (executionId: string) => {
     const listed = await deps.runtimes.automations.listRuns({
@@ -126,7 +202,9 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     for (const [executionId, projectId] of pendingOrcExecutions) {
       const found = await findManualRun(executionId);
       if (!found.success || !found.data?.conversationId) continue;
-      orcExecutions.set(found.data.conversationId, { executionId, projectId });
+      const execution = { executionId, projectId };
+      orcExecutions.set(found.data.conversationId, execution);
+      watchInteractiveTerminalPrompts(found.data.conversationId, execution);
       pendingOrcExecutions.delete(executionId);
     }
     const states = await deps.runtimes.tuiAgents.agentStates.state(undefined, 'list').snapshot();
@@ -281,6 +359,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
               model: input.model,
               initialPrompt: input.goal,
               autoApprove: true,
+              trustWorkspace: true,
             },
           },
           workspace: {
@@ -302,10 +381,12 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         });
         if (!started.success) return orchestrationFailure(started.error);
         if (started.data.run.conversationId) {
-          orcExecutions.set(started.data.run.conversationId, {
+          const execution = {
             executionId: input.executionId,
             projectId: input.repositoryPath,
-          });
+          };
+          orcExecutions.set(started.data.run.conversationId, execution);
+          watchInteractiveTerminalPrompts(started.data.run.conversationId, execution);
         } else {
           pendingOrcExecutions.set(input.executionId, input.repositoryPath);
         }

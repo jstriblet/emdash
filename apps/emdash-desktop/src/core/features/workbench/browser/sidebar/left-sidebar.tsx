@@ -74,12 +74,12 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             <SidebarMenuButton
               isActive={isCurrentView(currentView, 'orchestrator')}
               onClick={() => navigate(orchestratorViewDef())}
-              aria-label="Thread"
+              aria-label="Orc"
               className="w-full justify-between"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <MessageCircle className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
-                <span className="truncate">Thread</span>
+                <span className="truncate">Orc</span>
               </span>
             </SidebarMenuButton>
             <SidebarMenuButton

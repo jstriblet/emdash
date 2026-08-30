@@ -23,6 +23,21 @@ import type { ContractClient } from '@emdash/wire/rpc';
 import { createTestWire } from '@emdash/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
+import { isInteractiveTerminalPrompt } from './controller';
+
+describe('isInteractiveTerminalPrompt', () => {
+  it('recognizes a Claude workspace trust dialog after terminal cleanup', () => {
+    expect(
+      isInteractiveTerminalPrompt(
+        'Quick\u001b[8G safety check: Is this a project you trust?\nEnter\u001b[8G to confirm'
+      )
+    ).toBe(true);
+  });
+
+  it('ignores ordinary worker output', () => {
+    expect(isInteractiveTerminalPrompt('Running tests and inspecting the diff.')).toBe(false);
+  });
+});
 
 describe('createWorkspaceWireController', () => {
   it('pushes blocked and completed worker events to Orc and archives after acknowledgement', async () => {
@@ -70,7 +85,8 @@ describe('createWorkspaceWireController', () => {
       lastAssistantMessage: undefined as string | undefined,
       updatedAt: 1,
     };
-    let notify = () => {};
+    const notifications: Array<() => void> = [];
+    const notify = () => notifications.forEach((callback) => callback());
     const source = {
       snapshot: async () => ({
         generation: 1,
@@ -84,7 +100,7 @@ describe('createWorkspaceWireController', () => {
       asLiveSource: () => ({
         snapshot: async () => ({ data: { 'conversation-push': state } }),
         subscribe: async (callback: () => void) => {
-          notify = callback;
+          notifications.push(callback);
           return () => {};
         },
       }),

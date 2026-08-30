@@ -39,6 +39,7 @@ export const tuiSessionStartInputSchema = z.object({
   model: nonBlankStringSchema.nullable(),
   initialPrompt: nonBlankStringSchema,
   autoApprove: z.boolean(),
+  trustWorkspace: z.boolean().optional(),
   cols: z.number().int().positive(),
   rows: z.number().int().positive(),
 });
