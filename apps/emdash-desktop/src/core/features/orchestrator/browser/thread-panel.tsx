@@ -186,6 +186,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
       ]);
       setHealth(nextHealth);
       setEntries(thread.turns);
+      setError(undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to connect to Orc');
     }
