@@ -45,8 +45,97 @@ export const orchestratorForkUpdateSchema = z.object({
   message: z.string(),
 });
 
+export const orchestratorEvidenceSchema = z.object({
+  kind: z.enum(['command', 'test', 'diff', 'commit', 'file', 'log', 'screenshot', 'url']),
+  reference: z.string().min(1),
+  summary: z.string().min(1),
+});
+
+export const orchestratorWorkContractInputSchema = z.object({
+  version: z.literal('1').default('1'),
+  goal: z.string().min(1),
+  non_goals: z.array(z.string()).default([]),
+  constraints: z.array(z.string()).default([]),
+  deliverables: z.array(z.object({ id: z.string(), description: z.string() })).min(1),
+  acceptance_checks: z
+    .array(
+      z.object({
+        id: z.string(),
+        description: z.string(),
+        procedure: z.string(),
+        expected: z.string(),
+        required: z.boolean().default(true),
+      })
+    )
+    .min(1),
+  definition_of_done: z.string().min(1),
+  escalation_conditions: z.array(z.string()).default([]),
+});
+
+export const orchestratorWorkContractCheckStateSchema = z.object({
+  check_id: z.string(),
+  status: z.enum(['pending', 'running', 'passed', 'failed', 'blocked', 'waived']),
+  evidence: z.array(orchestratorEvidenceSchema),
+  waiver_authorized_by: z.string().nullable(),
+  waiver_reason: z.string().nullable(),
+});
+
+export const orchestratorWorkContractSchema = z.object({
+  task_id: z.string(),
+  revision: z.number().int().positive(),
+  state: z.enum(['planned', 'working', 'verifying', 'blocked', 'handoff', 'completed', 'failed']),
+  created_at: z.string(),
+  contract: orchestratorWorkContractInputSchema,
+  checks: z.array(orchestratorWorkContractCheckStateSchema),
+});
+
+export const orchestratorWorkContractUpdateInputSchema = z.object({
+  version: z.literal('1').default('1'),
+  event_id: z.string().min(1),
+  contract_revision: z.number().int().positive(),
+  sender: z.string().min(1),
+  recipient: z.string().nullable().optional(),
+  message_type: z.enum([
+    'plan',
+    'progress',
+    'evidence',
+    'question',
+    'decision',
+    'blocker',
+    'handoff',
+    'verification',
+    'completion',
+  ]),
+  state: z.enum(['planned', 'working', 'verifying', 'blocked', 'handoff', 'completed', 'failed']),
+  summary: z.string().min(1),
+  affected_ids: z.array(z.string()).default([]),
+  evidence: z.array(orchestratorEvidenceSchema).default([]),
+  blockers: z.array(z.string()).default([]),
+  assumptions: z.array(z.string()).default([]),
+  risks: z.array(z.string()).default([]),
+  authority_needed: z.array(z.string()).default([]),
+  next_action: z.string().nullable().optional(),
+  next_owner: z.string().nullable().optional(),
+  check_results: z
+    .array(
+      z.object({
+        check_id: z.string(),
+        status: z.enum(['running', 'passed', 'failed', 'blocked', 'waived']),
+        evidence: z.array(orchestratorEvidenceSchema).default([]),
+        waiver_authorized_by: z.string().nullable().optional(),
+        waiver_reason: z.string().nullable().optional(),
+      })
+    )
+    .default([]),
+});
+
 export type OrchestratorEntry = z.infer<typeof orchestratorEntrySchema>;
 export type OrchestratorHealth = z.infer<typeof orchestratorHealthSchema>;
 export type OrchestratorThread = z.infer<typeof orchestratorThreadSchema>;
 export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
 export type OrchestratorForkUpdate = z.infer<typeof orchestratorForkUpdateSchema>;
+export type OrchestratorWorkContractInput = z.infer<typeof orchestratorWorkContractInputSchema>;
+export type OrchestratorWorkContract = z.infer<typeof orchestratorWorkContractSchema>;
+export type OrchestratorWorkContractUpdateInput = z.infer<
+  typeof orchestratorWorkContractUpdateInputSchema
+>;

@@ -4,4 +4,5 @@ export type {
   OrchestratorHealth,
   OrchestratorReply,
   OrchestratorThread,
+  OrchestratorWorkContract,
 } from '@emdash/core/runtimes/orchestrator/api';

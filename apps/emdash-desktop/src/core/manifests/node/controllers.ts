@@ -1,4 +1,5 @@
 import type { RuntimeBroker } from '@emdash/core/services/runtime-broker/api';
+import { OrchestratorRuntime } from '@emdash/core/runtimes/orchestrator/node';
 import type { Scope } from '@emdash/shared/concurrency';
 import type { Logger } from '@emdash/shared/logger';
 import {
@@ -264,9 +265,11 @@ export const desktopNodeControllers = {
   },
   orchestrator: {
     create: ({ scope, ssh }) => {
-      const service = new OrchestratorService(ssh, {
-        baseUrl: process.env.EMDASH_ORCHESTRATOR_URL,
-      });
+      const service = new OrchestratorService(
+        ssh,
+        (baseUrl) => new OrchestratorRuntime({ baseUrl }),
+        { baseUrl: process.env.EMDASH_ORCHESTRATOR_URL }
+      );
       scope.add(() => service.dispose());
       return createOrchestratorWireController(service);
     },

@@ -7,8 +7,10 @@ import type {
   OrchestratorForkUpdate,
   OrchestratorReply,
   OrchestratorThread,
+  OrchestratorWorkContract,
+  OrchestratorWorkContractInput,
+  OrchestratorWorkContractUpdateInput,
 } from '@emdash/core/runtimes/orchestrator/api';
-import { OrchestratorRuntime } from '@emdash/core/runtimes/orchestrator/node';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
 
 const ORC_HOST = '127.0.0.1';
@@ -23,16 +25,31 @@ type OrchestratorServiceOptions = {
   remotePort?: number;
 };
 
+export type OrchestratorRuntimeClient = {
+  health(): Promise<OrchestratorHealth>;
+  thread(limit?: number): Promise<OrchestratorThread>;
+  send(text: string): Promise<OrchestratorReply>;
+  workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
+  createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract>;
+  updateWorkContract(
+    contractId: string,
+    update: OrchestratorWorkContractUpdateInput
+  ): Promise<OrchestratorWorkContract>;
+};
+
+export type CreateOrchestratorRuntime = (baseUrl?: string) => OrchestratorRuntimeClient;
+
 export class OrchestratorService {
-  private runtime: OrchestratorRuntime;
+  private runtime: OrchestratorRuntimeClient;
   private server: Server | undefined;
   private macBuild: ChildProcess | undefined;
 
   constructor(
     private readonly ssh: SshServiceHandle,
+    private readonly createRuntime: CreateOrchestratorRuntime,
     private readonly options: OrchestratorServiceOptions = {}
   ) {
-    this.runtime = new OrchestratorRuntime({ baseUrl: options.baseUrl });
+    this.runtime = createRuntime(options.baseUrl);
   }
 
   async connect(connectionId: string): Promise<OrchestratorHealth> {
@@ -57,7 +74,7 @@ export class OrchestratorService {
       });
     });
 
-    this.runtime = new OrchestratorRuntime({ baseUrl: `http://${ORC_HOST}:${port}` });
+    this.runtime = this.createRuntime(`http://${ORC_HOST}:${port}`);
     try {
       return await this.runtime.health();
     } catch (error) {
@@ -129,6 +146,21 @@ export class OrchestratorService {
 
   send(text: string): Promise<OrchestratorReply> {
     return this.runtime.send(text);
+  }
+
+  workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }> {
+    return this.runtime.workContracts();
+  }
+
+  createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract> {
+    return this.runtime.createWorkContract(contract);
+  }
+
+  updateWorkContract(
+    contractId: string,
+    update: OrchestratorWorkContractUpdateInput
+  ): Promise<OrchestratorWorkContract> {
+    return this.runtime.updateWorkContract(contractId, update);
   }
 
   async dispose(): Promise<void> {

@@ -4,6 +4,9 @@ import {
   orchestratorHealthSchema,
   orchestratorForkUpdateSchema,
   orchestratorReplySchema,
+  orchestratorWorkContractInputSchema,
+  orchestratorWorkContractSchema,
+  orchestratorWorkContractUpdateInputSchema,
   orchestratorThreadSchema,
 } from './schemas';
 
@@ -24,6 +27,18 @@ export const orchestratorContract = defineContract({
   send: procedure({
     input: z.object({ text: z.string().trim().min(1) }),
     output: orchestratorReplySchema,
+  }),
+  workContracts: procedure({
+    input: z.void(),
+    output: z.object({ workContracts: z.array(orchestratorWorkContractSchema) }),
+  }),
+  createWorkContract: procedure({
+    input: orchestratorWorkContractInputSchema,
+    output: orchestratorWorkContractSchema,
+  }),
+  updateWorkContract: procedure({
+    input: z.object({ contractId: z.string(), update: orchestratorWorkContractUpdateInputSchema }),
+    output: orchestratorWorkContractSchema,
   }),
 });
 

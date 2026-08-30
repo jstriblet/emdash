@@ -1,7 +1,11 @@
 import { createServer, connect as connectSocket, type Server } from 'node:net';
+import type { OrchestratorHealth } from '@emdash/core/runtimes/orchestrator/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
-import { OrchestratorService } from './orchestrator-service';
+import {
+  OrchestratorService,
+  type CreateOrchestratorRuntime,
+} from './orchestrator-service';
 
 describe('OrchestratorService', () => {
   let remote: Server | undefined;
@@ -47,7 +51,18 @@ describe('OrchestratorService', () => {
       ssh: { connect },
       manager: { getProxy: () => ({ isConnected: true, client: { forwardOut } }) },
     } as unknown as SshServiceHandle;
-    service = new OrchestratorService(ssh, { remotePort });
+    const createRuntime: CreateOrchestratorRuntime = (baseUrl = 'http://127.0.0.1:8790') => ({
+      health: async () => {
+        const response = await fetch(`${baseUrl}/health`);
+        return (await response.json()) as OrchestratorHealth;
+      },
+      thread: vi.fn(),
+      send: vi.fn(),
+      workContracts: vi.fn(),
+      createWorkContract: vi.fn(),
+      updateWorkContract: vi.fn(),
+    });
+    service = new OrchestratorService(ssh, createRuntime, { remotePort });
 
     await expect(service.connect('thinkcenter')).resolves.toMatchObject({ status: 'ok' });
     expect(connect).toHaveBeenCalledWith('thinkcenter');

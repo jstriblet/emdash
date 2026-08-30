@@ -1,11 +1,16 @@
 import {
   orchestratorHealthSchema,
   orchestratorReplySchema,
+  orchestratorWorkContractSchema,
   orchestratorThreadSchema,
   type OrchestratorHealth,
   type OrchestratorReply,
   type OrchestratorThread,
+  type OrchestratorWorkContract,
+  type OrchestratorWorkContractInput,
+  type OrchestratorWorkContractUpdateInput,
 } from '#runtimes/orchestrator/api';
+import { z } from 'zod';
 
 type Fetch = typeof globalThis.fetch;
 
@@ -47,6 +52,32 @@ export class OrchestratorRuntime {
     );
   }
 
+  workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }> {
+    return this.#request('/work-contracts', undefined, (value) => {
+      const record = value as { work_contracts?: unknown };
+      return { workContracts: z.array(orchestratorWorkContractSchema).parse(record.work_contracts) };
+    });
+  }
+
+  createWorkContract(contract: OrchestratorWorkContractInput): Promise<OrchestratorWorkContract> {
+    return this.#request(
+      '/work-contracts',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(contract) },
+      orchestratorWorkContractSchema.parse
+    );
+  }
+
+  updateWorkContract(
+    contractId: string,
+    update: OrchestratorWorkContractUpdateInput
+  ): Promise<OrchestratorWorkContract> {
+    return this.#request(
+      `/work-contracts/${encodeURIComponent(contractId)}/updates`,
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(update) },
+      orchestratorWorkContractSchema.parse
+    );
+  }
+
   async #request<T>(
     path: string,
     init: RequestInit | undefined,
@@ -62,7 +93,15 @@ export class OrchestratorRuntime {
       throw new Error(`Unable to reach Orc at ${this.#baseUrl}`, { cause: error });
     }
     if (!response.ok) {
-      throw new Error(`Orc request failed (${response.status} ${response.statusText})`);
+      let detail: string | undefined;
+      try {
+        const body = (await response.json()) as { detail?: unknown };
+        if (typeof body.detail === 'string') detail = body.detail;
+      } catch {
+        // Some proxies return an empty or non-JSON response for upstream failures.
+      }
+      const suffix = detail ? `: ${detail}` : '';
+      throw new Error(`Orc request failed (${response.status} ${response.statusText})${suffix}`);
     }
     return parse(await response.json());
   }
