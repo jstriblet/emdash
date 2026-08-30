@@ -38,6 +38,14 @@ export function shouldFollowOrcThread(submittedTurnInFlight: boolean, distanceFr
   return submittedTurnInFlight || distanceFromBottom < 80;
 }
 
+export function escapeCancelAction(
+  isWorking: boolean,
+  confirmationVisible: boolean
+): 'ignore' | 'confirm' | 'cancel' {
+  if (!isWorking) return 'ignore';
+  return confirmationVisible ? 'cancel' : 'confirm';
+}
+
 async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
   let output = '';
   const runtime = await getConversationsClient();
@@ -127,6 +135,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [cancelConfirmationVisible, setCancelConfirmationVisible] = useState(false);
   const [workStage, setWorkStage] = useState<OrchestratedWorkStage>();
   const [connecting, setConnecting] = useState(false);
   const [updatingFork, setUpdatingFork] = useState(false);
@@ -139,6 +148,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const endRef = useRef<HTMLDivElement>(null);
   const activeMcpActionIdsRef = useRef(new Set<string>());
   const actionInFlightRef = useRef(false);
+  const cancelConfirmationTimerRef = useRef<number | undefined>(undefined);
   const visibleEntries = useMemo(() => {
     const recentTurnIds: string[] = [];
     for (const entry of [...entries].reverse()) {
@@ -463,6 +473,11 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   }
 
   async function interrupt() {
+    if (cancelConfirmationTimerRef.current !== undefined) {
+      window.clearTimeout(cancelConfirmationTimerRef.current);
+      cancelConfirmationTimerRef.current = undefined;
+    }
+    setCancelConfirmationVisible(false);
     try {
       await (await getOrchestratorClient()).interrupt(undefined);
       submittedTurnInFlightRef.current = false;
@@ -475,11 +490,27 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   }
 
   useEffect(() => {
-    if (!sending && !health?.busy) return;
+    const isWorking = sending || Boolean(health?.busy);
+    if (!isWorking) {
+      setCancelConfirmationVisible(false);
+      return;
+    }
     const stopOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.repeat) return;
       event.preventDefault();
-      void interrupt();
+      const action = escapeCancelAction(isWorking, cancelConfirmationVisible);
+      if (action === 'confirm') {
+        setCancelConfirmationVisible(true);
+        if (cancelConfirmationTimerRef.current !== undefined) {
+          window.clearTimeout(cancelConfirmationTimerRef.current);
+        }
+        cancelConfirmationTimerRef.current = window.setTimeout(() => {
+          setCancelConfirmationVisible(false);
+          cancelConfirmationTimerRef.current = undefined;
+        }, 3_000);
+      } else if (action === 'cancel') {
+        void interrupt();
+      }
     };
     window.addEventListener('keydown', stopOnEscape);
     return () => window.removeEventListener('keydown', stopOnEscape);
@@ -654,6 +685,15 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
               <div className="mb-6 grid animate-pulse grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#88837c]">
                 <span>•</span>
                 <span>{workStage ? `${workStage}…` : 'Working… (Esc to stop)'}</span>
+              </div>
+            )}
+            {cancelConfirmationVisible && (
+              <div
+                role="status"
+                className="mb-6 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 text-[#d8cdbd]"
+              >
+                <span>!</span>
+                <span>Press Esc again to stop Orc</span>
               </div>
             )}
             <div ref={endRef} />
