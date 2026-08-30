@@ -67,6 +67,7 @@ describe('createWorkspaceWireController', () => {
       conversationId: 'conversation-push',
       providerId: 'codex',
       status: 'working' as 'working' | 'awaiting-input' | 'completed',
+      lastAssistantMessage: undefined as string | undefined,
       updatedAt: 1,
     };
     let notify = () => {};
@@ -148,12 +149,25 @@ describe('createWorkspaceWireController', () => {
       provider: 'codex',
       model: null,
     });
-    state = { ...state, status: 'awaiting-input', updatedAt: 2 };
+    state = {
+      ...state,
+      status: 'completed',
+      lastAssistantMessage: 'Should the marker be BLUE or GREEN?',
+      updatedAt: 2,
+    };
     notify();
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]?.body.status).toBe('blocked');
 
-    state = { ...state, status: 'completed', updatedAt: 3 };
+    state = { ...state, status: 'working', lastAssistantMessage: undefined, updatedAt: 3 };
+    notify();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    state = {
+      ...state,
+      status: 'completed',
+      lastAssistantMessage: 'Created and verified the requested file.',
+      updatedAt: 4,
+    };
     notify();
     await vi.waitFor(() => expect(requests).toHaveLength(3));
     expect(requests[1]?.body.status).toBe('completed');

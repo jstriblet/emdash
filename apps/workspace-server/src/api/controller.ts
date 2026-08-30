@@ -115,8 +115,10 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       execution.lastStatus = state.status;
       if (!['awaiting-input', 'completed', 'error'].includes(state.status)) continue;
       const output = await deps.runtimes.tuiAgents.output.handle({ conversationId }).snapshot();
+      const message = state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000);
+      const completedWithQuestion = state.status === 'completed' && message.trimEnd().endsWith('?');
       const status =
-        state.status === 'awaiting-input'
+        state.status === 'awaiting-input' || completedWithQuestion
           ? 'blocked'
           : state.status === 'error'
             ? 'failed'
@@ -133,8 +135,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
             provider: state.providerId,
             status,
             notification_type: state.notificationType,
-            prompt_excerpt:
-              state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000),
+            prompt_excerpt: message,
             observed_at: new Date().toISOString(),
           }),
         }
@@ -159,10 +160,13 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
   };
 
   if (deps.enableOrcCallbacks) {
+    let transitionQueue = Promise.resolve();
     const agentStateSource = deps.runtimes.tuiAgents.agentStates
       .state(undefined, 'list')
       .asLiveSource();
-    void agentStateSource.subscribe(() => void publishOrcTransitions());
+    void agentStateSource.subscribe(() => {
+      transitionQueue = transitionQueue.then(publishOrcTransitions).catch(() => {});
+    });
   }
 
   return createController(workspaceWireContract, {
