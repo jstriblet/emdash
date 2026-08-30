@@ -13,6 +13,7 @@ import { gitContract } from '@emdash/core/runtimes/git/api';
 import { createGitController, GitRuntime } from '@emdash/core/runtimes/git/node';
 import { terminalsContract } from '@emdash/core/runtimes/terminals/api';
 import { createTerminalsController, TerminalsRuntime } from '@emdash/core/runtimes/terminals/node';
+import type { TuiAgentsContract } from '@emdash/core/runtimes/tui-agents/api';
 import type { IWatchService } from '@emdash/core/services/fs-watch/api';
 import type { PtySpawner } from '@emdash/core/services/pty/api';
 import { PROTOCOL_VERSION, workspaceWireContract } from '@emdash/core/workspace-server';
@@ -88,6 +89,96 @@ describe('createWorkspaceWireController', () => {
       expect.objectContaining({ automationId: 'exec-1', enabled: true })
     );
     expect(automations.startRun).toHaveBeenCalledWith({ automationId: 'exec-1' });
+  });
+
+  it('inspects the live worker state and retained output', async () => {
+    const run = {
+      id: 'run-1',
+      seq: 2,
+      automationId: 'exec-1',
+      status: 'done' as const,
+      triggerKind: 'manual' as const,
+      configSnapshot: {
+        name: 'Orc worker',
+        schedule: { expr: '0 0 1 1 *', tz: 'UTC' },
+        agent: {
+          type: 'tui' as const,
+          start: {
+            providerId: 'codex',
+            model: null,
+            initialPrompt: 'Inspect README',
+            autoApprove: true,
+          },
+        },
+        workspace: {
+          kind: 'directory' as const,
+          path: {
+            host: { type: 'local' as const, id: 'local' },
+            path: { root: { kind: 'posix' as const }, segments: ['tmp', 'worker'] },
+          },
+        },
+      },
+      generatedName: 'orc-worker',
+      scheduledAt: null,
+      deadlineAt: null,
+      startedAt: 1,
+      finishedAt: 2,
+      workspace: null,
+      branchName: 'orc-worker',
+      conversationId: 'conversation-1',
+      sessionId: null,
+      error: null,
+    };
+    const automations = Object.assign(createTestRuntimeClients().automations, {
+      listRuns: vi.fn(async () => ok({ runs: [run] })),
+    }) as unknown as ContractClient<AutomationsContract>;
+    const session = {
+      conversationId: 'conversation-1',
+      sessionId: null,
+      status: 'running' as const,
+      cols: 120,
+      rows: 40,
+      resume: null,
+      startedAt: 1,
+    };
+    const agentState = {
+      conversationId: 'conversation-1',
+      status: 'awaiting-input' as const,
+      updatedAt: 2,
+    };
+    const source = (data: unknown) => ({
+      snapshot: async () => ({ generation: 1, sequence: 1, timestamp: 1, data }),
+      attach: async () => () => {},
+      asLiveSource: () => ({ snapshot: async () => ({ data }) }),
+    });
+    const tuiAgents = Object.assign(createTestRuntimeClients().tuiAgents, {
+      sessions: {
+        kind: 'liveModelClientHandle',
+        def: workspaceWireContract.tuiAgents.sessions,
+        state: () => source({ 'conversation-1': session }),
+      },
+      agentStates: {
+        kind: 'liveModelClientHandle',
+        def: workspaceWireContract.tuiAgents.agentStates,
+        state: () => source({ 'conversation-1': agentState }),
+      },
+      output: {
+        kind: 'liveLogClientHandle',
+        def: workspaceWireContract.tuiAgents.output,
+        handle: () => source({ baseOffset: 0, text: 'Need approval', truncated: false }),
+      },
+    }) as unknown as ContractClient<TuiAgentsContract>;
+    const controller = createTestWorkspaceWireController({ automations, tuiAgents });
+
+    await expect(
+      controller.call('orchestration.inspect', { executionId: 'exec-1' })
+    ).resolves.toMatchObject({
+      success: true,
+      data: {
+        run: { id: 'run-1' },
+        worker: { status: 'awaiting-input', outputTail: 'Need approval' },
+      },
+    });
   });
 
   it('forwards ACP procedures to the mounted runtime client', async () => {

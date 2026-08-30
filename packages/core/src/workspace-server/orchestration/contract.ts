@@ -1,6 +1,7 @@
 import { defineContract, fallible } from '@emdash/wire/rpc';
 import { z } from 'zod';
 import { automationRunSchema } from '#runtimes/automations/api';
+import { tuiAgentStateSchema, tuiSessionStateSchema } from '#runtimes/tui-agents/api';
 
 const launchInput = z.object({
   executionId: z.string().min(1),
@@ -15,6 +16,17 @@ const launchInput = z.object({
 
 const executionInput = z.object({ executionId: z.string().min(1) });
 const orchestrationError = z.object({ type: z.literal('operation-failed'), message: z.string() });
+const inspectionSchema = z.object({
+  run: automationRunSchema,
+  worker: z
+    .object({
+      status: z.enum(['starting', 'running', 'awaiting-input', 'completed', 'failed', 'exited']),
+      session: tuiSessionStateSchema.nullable(),
+      agentState: tuiAgentStateSchema.nullable(),
+      outputTail: z.string(),
+    })
+    .nullable(),
+});
 
 export const workspaceOrchestrationContract = defineContract({
   launch: fallible({ input: launchInput, data: automationRunSchema, error: orchestrationError }),
@@ -23,6 +35,13 @@ export const workspaceOrchestrationContract = defineContract({
     data: automationRunSchema.nullable(),
     error: orchestrationError,
   }),
+  inspect: fallible({ input: executionInput, data: inspectionSchema.nullable(), error: orchestrationError }),
+  sendInput: fallible({
+    input: executionInput.extend({ data: z.string().min(1).max(10_000) }),
+    data: inspectionSchema,
+    error: orchestrationError,
+  }),
+  archive: fallible({ input: executionInput, data: z.void(), error: orchestrationError }),
   cancel: fallible({ input: executionInput, data: z.void(), error: orchestrationError }),
 });
 

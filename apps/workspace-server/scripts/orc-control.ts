@@ -6,6 +6,9 @@ import { DEFAULT_WORKSPACE_SERVER_SOCKET_PATH } from '../src/daemon/paths';
 type Request =
   | { command: 'launch'; input: Parameters<ReturnType<typeof wire>['orchestration']['launch']>[0] }
   | { command: 'get'; input: { executionId: string } }
+  | { command: 'inspect'; input: { executionId: string } }
+  | { command: 'sendInput'; input: { executionId: string; data: string } }
+  | { command: 'archive'; input: { executionId: string } }
   | { command: 'cancel'; input: { executionId: string } };
 
 const socketPath =
@@ -25,12 +28,27 @@ try {
     client: { id: 'orc', appVersion: 'phase-5-dev' },
   });
   if (!initialized.success) throw new Error(JSON.stringify(initialized.error));
-  const result =
-    request.command === 'launch'
-      ? await api.orchestration.launch(request.input)
-      : request.command === 'get'
-        ? await api.orchestration.get(request.input)
-        : await api.orchestration.cancel(request.input);
+  let result;
+  switch (request.command) {
+    case 'launch':
+      result = await api.orchestration.launch(request.input);
+      break;
+    case 'get':
+      result = await api.orchestration.get(request.input);
+      break;
+    case 'inspect':
+      result = await api.orchestration.inspect(request.input);
+      break;
+    case 'sendInput':
+      result = await api.orchestration.sendInput(request.input);
+      break;
+    case 'archive':
+      result = await api.orchestration.archive(request.input);
+      break;
+    case 'cancel':
+      result = await api.orchestration.cancel(request.input);
+      break;
+  }
   process.stdout.write(`${JSON.stringify(result)}\n`);
 } finally {
   transport.close?.();

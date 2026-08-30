@@ -28,6 +28,54 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
   const daemonId = deps.daemonId ?? defaultDaemonId;
   const startedAt = deps.startedAt ?? defaultStartedAt;
 
+  const findManualRun = async (executionId: string) => {
+    const listed = await deps.runtimes.automations.listRuns({
+      automationId: executionId,
+      limit: 10,
+    });
+    if (!listed.success) return orchestrationFailure(listed.error);
+    return ok(listed.data.runs.find((run) => run.triggerKind === 'manual') ?? null);
+  };
+
+  const inspectExecution = async (executionId: string) => {
+    const found = await findManualRun(executionId);
+    if (!found.success) return err(found.error);
+    if (found.data === null) return ok(null);
+    const run = found.data;
+    if (!run.conversationId) return ok({ run, worker: null });
+    const conversationId = run.conversationId;
+    const [sessions, agentStates, output] = await Promise.all([
+      deps.runtimes.tuiAgents.sessions.state(undefined, 'list').snapshot(),
+      deps.runtimes.tuiAgents.agentStates.state(undefined, 'list').snapshot(),
+      deps.runtimes.tuiAgents.output.handle({ conversationId }).snapshot(),
+    ]);
+    const session = sessions.data[conversationId] ?? null;
+    const agentState = agentStates.data[conversationId] ?? null;
+    const status =
+      agentState?.status === 'awaiting-input'
+        ? ('awaiting-input' as const)
+        : agentState?.status === 'completed'
+          ? ('completed' as const)
+          : agentState?.status === 'error'
+            ? ('failed' as const)
+            : session?.status === 'exited'
+              ? ('exited' as const)
+              : !session && !agentState
+                ? ('exited' as const)
+                : session?.status === 'starting'
+                  ? ('starting' as const)
+                  : ('running' as const);
+    return ok({
+      run,
+      worker: {
+        status,
+        session,
+        agentState,
+        outputTail: output.data.text.slice(-64_000),
+      },
+    });
+  };
+
   return createController(workspaceWireContract, {
     health: () => ({
       status: 'ok' as const,
@@ -130,13 +178,37 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         return started.success ? ok(started.data.run) : orchestrationFailure(started.error);
       },
       get: async ({ executionId }) => {
-        const listed = await deps.runtimes.automations.listRuns({
-          automationId: executionId,
-          limit: 10,
+        return findManualRun(executionId);
+      },
+      inspect: async ({ executionId }) => inspectExecution(executionId),
+      sendInput: async ({ executionId, data }) => {
+        const found = await findManualRun(executionId);
+        if (!found.success) return err(found.error);
+        if (!found.data?.conversationId) {
+          return orchestrationFailure(new Error('Worker conversation is not available'));
+        }
+        const sent = await deps.runtimes.tuiAgents.sendInput({
+          conversationId: found.data.conversationId,
+          data,
         });
-        return listed.success
-          ? ok(listed.data.runs.find((run) => run.triggerKind === 'manual') ?? null)
-          : orchestrationFailure(listed.error);
+        if (!sent.success) return orchestrationFailure(sent.error);
+        const inspected = await inspectExecution(executionId);
+        if (!inspected.success) return err(inspected.error);
+        return inspected.data
+          ? ok(inspected.data)
+          : orchestrationFailure(new Error('Worker execution disappeared'));
+      },
+      archive: async ({ executionId }) => {
+        const found = await findManualRun(executionId);
+        if (!found.success) return err(found.error);
+        const conversationId = found.data?.conversationId;
+        if (!conversationId) return ok(undefined);
+        const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
+        if (!deleted.success) return orchestrationFailure(deleted.error);
+        const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
+        return conversationDeleted.success
+          ? ok(undefined)
+          : orchestrationFailure(conversationDeleted.error);
       },
       cancel: async ({ executionId }) => {
         const listed = await deps.runtimes.automations.listRuns({
