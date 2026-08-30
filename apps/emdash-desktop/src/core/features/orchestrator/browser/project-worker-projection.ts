@@ -77,7 +77,18 @@ export async function projectOrcWorkersIntoTasks(
 
   for (const contract of contracts) {
     const execution = contract.executions.at(-1);
-    if (!execution?.worktree_path) continue;
+    // Completed workers have already been verified and archived on the host. Their
+    // workspace records may no longer exist, so replaying them into a fresh desktop
+    // would create a task that can never resolve its selected workspace.
+    if (
+      !execution?.worktree_path ||
+      contract.state === 'completed' ||
+      contract.state === 'failed' ||
+      execution.state === 'completed' ||
+      execution.state === 'failed'
+    ) {
+      continue;
+    }
 
     const project = await findOrCreateProject(execution.project_id, execution.host_id);
     if (!project?.data || projectionAttempts.has(contract.task_id)) continue;
