@@ -69,16 +69,20 @@ export async function createOrchestratedWorkSession(
   onProgress: ProgressReporter = () => {}
 ): Promise<void> {
   const projectManager = getProjectManagerStore();
-  const projectType = await runStage(
-    'Connecting to the project host',
-    resolveProjectHost(request.hostName),
-    onProgress
+  const namedProjects = [...projectManager.projects.values()].filter(
+    (candidate) => candidate.name?.toLowerCase() === request.projectName.toLowerCase()
   );
-  let project = [...projectManager.projects.values()].find(
+  const existingProject = namedProjects.length === 1 ? namedProjects[0] : undefined;
+  const projectType: OrchestratedProjectType = existingProject?.data
+    ? projectHost(existingProject.data)
+    : await runStage(
+        'Connecting to the project host',
+        resolveProjectHost(request.hostName),
+        onProgress
+      );
+  let project = namedProjects.find(
     (candidate) =>
-      candidate.name?.toLowerCase() === request.projectName.toLowerCase() &&
-      candidate.data &&
-      projectMatchesHost(candidate.data, projectType)
+      candidate.data && projectMatchesHost(candidate.data, projectType)
   );
 
   if (!project?.data) {
@@ -433,4 +437,13 @@ function projectMatchesHost(
     (project.type === 'local' ||
       (projectType.type === 'ssh' && project.connectionId === projectType.connectionId))
   );
+}
+
+export function projectHost(project: {
+  type: 'local' | 'ssh';
+  connectionId?: string;
+}): OrchestratedProjectType {
+  return project.type === 'ssh' && project.connectionId
+    ? { type: 'ssh', connectionId: project.connectionId }
+    : { type: 'local' };
 }

@@ -3,6 +3,7 @@ import {
   findSshConfigHost,
   findExistingMachine,
   parseOrchestratedWorkRequest,
+  projectHost,
   projectPathCandidates,
   runStage,
   sshConfigHostToConnection,
@@ -101,6 +102,17 @@ describe('runStage', () => {
 });
 
 describe('SSH config host discovery', () => {
+  it('uses the host already attached to an existing SSH project', () => {
+    expect(projectHost({ type: 'ssh', connectionId: 'existing-host' })).toEqual({
+      type: 'ssh',
+      connectionId: 'existing-host',
+    });
+  });
+
+  it('uses local execution for an existing local project', () => {
+    expect(projectHost({ type: 'local' })).toEqual({ type: 'local' });
+  });
+
   it('reuses an IP-address machine when an SSH alias resolves to that address', () => {
     expect(
       findExistingMachine(
