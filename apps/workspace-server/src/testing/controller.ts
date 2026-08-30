@@ -18,7 +18,10 @@ import { createWorkspaceWireController, type WorkspaceWireControllerDeps } from 
 import type { WorkspaceServerRuntimeClients } from '../gateway/workspace-workers';
 
 type ControllerMetadata = Partial<
-  Pick<WorkspaceWireControllerDeps, 'appVersion' | 'daemonId' | 'startedAt' | 'enableOrcCallbacks'>
+  Pick<
+    WorkspaceWireControllerDeps,
+    'appVersion' | 'daemonId' | 'startedAt' | 'enableOrcCallbacks' | 'loadOrcExecutions'
+  >
 >;
 
 export function createTestWorkspaceWireController(

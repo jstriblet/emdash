@@ -23,7 +23,7 @@ import type { ContractClient } from '@emdash/wire/rpc';
 import { createTestWire } from '@emdash/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
-import { isInteractiveTerminalPrompt } from './controller';
+import { isInteractiveTerminalPrompt, shouldRetainWorkerForOrcReply } from './controller';
 
 describe('isInteractiveTerminalPrompt', () => {
   it('recognizes a Claude workspace trust dialog after terminal cleanup', () => {
@@ -36,6 +36,16 @@ describe('isInteractiveTerminalPrompt', () => {
 
   it('ignores ordinary worker output', () => {
     expect(isInteractiveTerminalPrompt('Running tests and inspecting the diff.')).toBe(false);
+  });
+});
+
+describe('shouldRetainWorkerForOrcReply', () => {
+  it('retains a finished worker when Orc asks the user for a decision', () => {
+    expect(shouldRetainWorkerForOrcReply('Should I implement the permanent fix?')).toBe(true);
+  });
+
+  it('allows cleanup after a final summary with no outstanding question', () => {
+    expect(shouldRetainWorkerForOrcReply('The requested work is complete.')).toBe(false);
   });
 });
 
@@ -155,7 +165,7 @@ describe('createWorkspaceWireController', () => {
     );
     const controller = createTestWorkspaceWireController(
       { automations, tuiAgents, conversations, workspaceRegistry },
-      { enableOrcCallbacks: true }
+      { enableOrcCallbacks: true, loadOrcExecutions: async () => [] }
     );
 
     await controller.call('orchestration.launch', {
@@ -192,9 +202,9 @@ describe('createWorkspaceWireController', () => {
       updatedAt: 4,
     };
     notify();
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
-    expect(tuiAgents.delete).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(requests).toHaveLength(4));
+    expect(tuiAgents.delete).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(requests).toHaveLength(5));
     expect(requests[2]?.body.status).toBe('completed');
     expect(requests[2]?.body.prompt_excerpt).toBe('Created and verified the requested file.');
     expect(requests[2]?.body).toMatchObject({
@@ -202,11 +212,93 @@ describe('createWorkspaceWireController', () => {
       conversation_id: 'conversation-push',
       project_id: '/home/user/src/bookscape',
     });
-    expect(requests[3]?.url).toContain('/workers/exec-push/archived');
+    expect(requests[3]).toMatchObject({
+      url: 'http://127.0.0.1:8790/message',
+      body: { text: 'Created and verified the requested file.' },
+    });
+    expect(requests[4]?.url).toContain('/workers/exec-push/archived');
     expect(tuiAgents.delete).toHaveBeenCalledWith({ conversationId: 'conversation-push' });
     expect(workspaceRegistry.deleteWorktree).toHaveBeenCalledWith({
       workspaceId: 'run-push',
       deleteBranch: true,
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('restores worker callback routing after a workspace-server restart', async () => {
+    const state = {
+      conversationId: 'conversation-restored',
+      providerId: 'codex',
+      status: 'awaiting-input' as const,
+      lastAssistantMessage: 'Which release channel should I use?',
+      updatedAt: 2,
+    };
+    const source = {
+      snapshot: async () => ({ generation: 1, sequence: 1, timestamp: 1, data: {
+        'conversation-restored': state,
+      } }),
+      attach: async () => () => {},
+      asLiveSource: () => ({
+        snapshot: async () => ({ data: { 'conversation-restored': state } }),
+        subscribe: async () => () => {},
+      }),
+    };
+    const runtimes = createTestRuntimeClients();
+    const tuiAgents = Object.assign(runtimes.tuiAgents, {
+      agentStates: {
+        kind: 'liveModelClientHandle',
+        def: workspaceWireContract.tuiAgents.agentStates,
+        state: () => source,
+      },
+      output: {
+        kind: 'liveLogClientHandle',
+        def: workspaceWireContract.tuiAgents.output,
+        handle: () => ({
+          ...source,
+          snapshot: async () => ({
+            generation: 1,
+            sequence: 1,
+            timestamp: 1,
+            data: { baseOffset: 0, text: state.lastAssistantMessage, truncated: false },
+          }),
+        }),
+      },
+    }) as unknown as ContractClient<TuiAgentsContract>;
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+        return { ok: true, json: async () => ({ action: null }) };
+      })
+    );
+
+    createTestWorkspaceWireController(
+      { tuiAgents },
+      {
+        enableOrcCallbacks: true,
+        loadOrcExecutions: async () => [
+          {
+            conversationId: 'conversation-restored',
+            executionId: 'execution-restored',
+            projectId: '/home/user/src/project',
+          },
+        ],
+      }
+    );
+
+    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests[0]).toMatchObject({
+      url: 'http://127.0.0.1:8790/workers/execution-restored/telemetry',
+      body: {
+        status: 'blocked',
+        conversation_id: 'conversation-restored',
+        project_id: '/home/user/src/project',
+      },
+    });
+    expect(requests[1]).toMatchObject({
+      url: 'http://127.0.0.1:8790/message',
+      body: { text: 'Which release channel should I use?' },
     });
     vi.unstubAllGlobals();
   });

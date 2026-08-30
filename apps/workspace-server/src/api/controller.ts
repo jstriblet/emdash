@@ -20,6 +20,9 @@ export type WorkspaceWireControllerDeps = {
   daemonId?: string;
   startedAt?: number;
   enableOrcCallbacks?: boolean;
+  loadOrcExecutions?: () => Promise<
+    Array<{ conversationId: string; executionId: string; projectId: string }>
+  >;
 };
 
 const defaultStartedAt = Date.now();
@@ -42,6 +45,10 @@ export function isInteractiveTerminalPrompt(value: string): boolean {
   );
 }
 
+export function shouldRetainWorkerForOrcReply(reply: string): boolean {
+  return reply.trimEnd().endsWith('?');
+}
+
 export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps) {
   const appVersion = deps.appVersion ?? '0.0.0';
   const daemonId = deps.daemonId ?? defaultDaemonId;
@@ -54,6 +61,62 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
   const watchedOrcConversations = new Set<string>();
   const pushedPromptFingerprints = new Map<string, string>();
   let orcMessageQueue = Promise.resolve();
+
+  const relayWorkerMessage = (message: string): Promise<string> => {
+    let reply = '';
+    const relay = orcMessageQueue.then(async () => {
+      const response = await fetch('http://127.0.0.1:8790/message', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ surface: 'terminal', text: message }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { reply?: string };
+      reply = payload.reply ?? '';
+    });
+    orcMessageQueue = relay.catch(() => undefined);
+    return relay.then(() => reply).catch(() => '');
+  };
+
+  const loadOrcExecutions =
+    deps.loadOrcExecutions ??
+    (async () => {
+      const response = await fetch('http://127.0.0.1:8790/work-contracts');
+      if (!response.ok) return [];
+      const payload = (await response.json()) as {
+        work_contracts?: Array<{
+          state?: string;
+          executions?: Array<{
+            execution_id?: string;
+            project_id?: string;
+            session_id?: string | null;
+            state?: string;
+          }>;
+        }>;
+      };
+      return (payload.work_contracts ?? []).flatMap((contract) => {
+        const execution = contract.executions?.at(-1);
+        if (
+          !execution?.session_id ||
+          !execution.execution_id ||
+          !execution.project_id ||
+          contract.state === 'completed' ||
+          contract.state === 'failed' ||
+          execution.state === 'completed' ||
+          execution.state === 'failed'
+        ) {
+          return [];
+        }
+        return [
+          {
+            conversationId: execution.session_id,
+            executionId: execution.execution_id,
+            projectId: execution.project_id,
+          },
+        ];
+      });
+    });
 
   const pushBlockedPrompt = async (
     conversationId: string,
@@ -83,16 +146,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       }
     );
     if (!response.ok) return;
-    orcMessageQueue = orcMessageQueue
-      .then(async () => {
-        await fetch('http://127.0.0.1:8790/message', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ surface: 'terminal', text: message }),
-          signal: AbortSignal.timeout(120_000),
-        });
-      })
-      .catch(() => undefined);
+    void relayWorkerMessage(message);
   };
 
   const watchInteractiveTerminalPrompts = (
@@ -245,19 +299,11 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           }),
         }
       );
-      if (response.ok && status === 'blocked') {
-        orcMessageQueue = orcMessageQueue
-          .then(async () => {
-            await fetch('http://127.0.0.1:8790/message', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ surface: 'terminal', text: message }),
-              signal: AbortSignal.timeout(120_000),
-            });
-          })
-          .catch(() => undefined);
-      }
+      const relayedReply = response.ok ? await relayWorkerMessage(message) : '';
       if (!response.ok || status !== 'completed') continue;
+      // Orc owns the user-facing handoff. If its synthesis asks the user to decide what
+      // happens next, retain the completed provider session so follow-up input can resume it.
+      if (shouldRetainWorkerForOrcReply(relayedReply)) continue;
       const directive = (await response.json()) as { action?: string; archive_delay_ms?: number };
       if (directive.action !== 'archive') continue;
       const archiveDelayMs = Math.max(0, Math.min(directive.archive_delay_ms ?? 0, 60_000));
@@ -279,6 +325,19 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     void agentStateSource.subscribe(() => {
       transitionQueue = transitionQueue.then(publishOrcTransitions).catch(() => {});
     });
+    transitionQueue = transitionQueue
+      .then(async () => {
+        for (const recovered of await loadOrcExecutions()) {
+          const execution = {
+            executionId: recovered.executionId,
+            projectId: recovered.projectId,
+          };
+          orcExecutions.set(recovered.conversationId, execution);
+          watchInteractiveTerminalPrompts(recovered.conversationId, execution);
+        }
+        await publishOrcTransitions();
+      })
+      .catch(() => {});
   }
 
   return createController(workspaceWireContract, {
