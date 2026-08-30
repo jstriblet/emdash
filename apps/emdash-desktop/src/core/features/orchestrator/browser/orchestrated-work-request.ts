@@ -1,3 +1,4 @@
+import { when } from 'mobx';
 import { getMachinesStore } from '@core/features/machines/contributions/app-stores';
 import { getProjectsWireClient } from '@core/features/projects/api/browser/client';
 import { getProjectManagerStore } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -242,6 +243,20 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
   );
   if (connection) {
     await machines.connect(connection.id);
+    await waitForMachineConnection(machines, connection.id);
+    if (machines.stateFor(connection.id) === 'error' && connection.authType === 'password') {
+      const resolved = await machines.getSshConfigHost(hostName.trim());
+      const repaired = await machines.saveConnection({
+        ...sshConfigHostToConnection(resolved),
+        id: connection.id,
+        name: connection.name,
+      });
+      await machines.connect(repaired.id);
+      await waitForMachineConnection(machines, repaired.id);
+    }
+    if (machines.stateFor(connection.id) !== 'connected') {
+      throw new Error(`SSH connection to “${hostName}” failed`);
+    }
     return { type: 'ssh', connectionId: connection.id };
   }
 
@@ -254,7 +269,32 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
   }
   const saved = await machines.saveConnection(sshConfigHostToConnection(sshConfigHost));
   await machines.connect(saved.id);
+  await waitForMachineConnection(machines, saved.id);
+  if (machines.stateFor(saved.id) !== 'connected') {
+    throw new Error(`SSH connection to “${hostName}” failed`);
+  }
   return { type: 'ssh', connectionId: saved.id };
+}
+
+async function waitForMachineConnection(
+  machines: Pick<ReturnType<typeof getMachinesStore>, 'stateFor'>,
+  connectionId: string
+): Promise<void> {
+  if (machines.stateFor(connectionId) === 'error') {
+    await when(() => machines.stateFor(connectionId) !== 'error', {
+      timeout: HOST_READY_TIMEOUT_MS,
+    });
+  }
+  await when(() => ['connected', 'error'].includes(machines.stateFor(connectionId)), {
+    timeout: HOST_READY_TIMEOUT_MS,
+  });
+}
+
+export function isCredentialDecryptionError(cause: unknown): boolean {
+  return (
+    cause instanceof Error &&
+    /failed to retrieve (?:password|passphrase).*decrypt/i.test(cause.message)
+  );
 }
 
 export function findSshConfigHost(
