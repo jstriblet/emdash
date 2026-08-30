@@ -85,14 +85,31 @@ export async function resolveSshConnectConfig(
   const alias = base.sshConfigAlias;
   const resolved = alias ? await deps.resolveSshConfig(alias) : undefined;
   const shouldResolveHostForAgent = !alias && base.authType === 'agent';
-  const agentResolved = shouldResolveHostForAgent
+  let agentResolved = shouldResolveHostForAgent
     ? await resolveManualAgentSshConfig(base.host, deps)
     : resolved;
 
-  const host = resolved?.hostname || base.host;
-  const port = resolved?.port ?? base.port;
-  const username = resolved?.user || base.username;
-  const authResult = await buildAuthConfig(input, base, agentResolved, deps);
+  let authResult;
+  let usedCredentialFallback = false;
+  try {
+    authResult = await buildAuthConfig(input, base, agentResolved, deps);
+  } catch (cause) {
+    if (base.authType !== 'password' || !isSafeStorageDecryptionError(cause)) throw cause;
+    usedCredentialFallback = true;
+    agentResolved = agentResolved ?? (await resolveManualAgentSshConfig(base.host, deps));
+    const agentConfig: SshConfig = { ...base, authType: 'agent', useAgent: true };
+    authResult = await buildAuthConfig(
+      { kind: 'transient', config: agentConfig },
+      agentConfig,
+      agentResolved,
+      deps
+    );
+  }
+
+  const effectiveResolved = resolved ?? (usedCredentialFallback ? agentResolved : undefined);
+  const host = effectiveResolved?.hostname || base.host;
+  const port = effectiveResolved?.port ?? base.port;
+  const username = effectiveResolved?.user || base.username;
 
   const config: ConnectConfig = {
     host,
@@ -132,6 +149,10 @@ export async function resolveSshConnectConfig(
   }
 
   return { config, cleanup, debugLogs };
+}
+
+function isSafeStorageDecryptionError(cause: unknown): boolean {
+  return cause instanceof Error && /decrypt(?:ing)? the ciphertext/i.test(cause.message);
 }
 
 export function createSshConnectConfigResolver(deps: SshConnectDeps) {

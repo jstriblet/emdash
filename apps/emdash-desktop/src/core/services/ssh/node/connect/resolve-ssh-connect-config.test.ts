@@ -686,6 +686,38 @@ describe('resolveSshConnectConfig', () => {
     });
   });
 
+  it('falls back to the effective OpenSSH agent when a stored password cannot be decrypted', async () => {
+    const result = await resolveSshConnectConfig(
+      {
+        kind: 'persisted',
+        row: row({ authType: 'password', host: 'thinkcenter', username: 'stale-user' }),
+      },
+      deps({
+        getPassword: async () => {
+          throw new Error('Error while decrypting the ciphertext provided to safeStorage');
+        },
+        resolveSshConfig: async () => ({
+          hostname: 'thinkcenter',
+          user: 'striblet',
+          port: 22,
+          identityFile: [],
+          identityAgentDisabled: false,
+          identitiesOnly: false,
+          proxyCommand: undefined,
+          proxyJump: undefined,
+          forwardAgent: false,
+        }),
+        env: { SSH_AUTH_SOCK: '/tmp/mac-agent.sock' },
+      })
+    );
+
+    expect(result.config).toMatchObject({
+      host: 'thinkcenter',
+      username: 'striblet',
+      agent: '/tmp/mac-agent.sock',
+    });
+  });
+
   it('returns the live proxy debug log array rather than a one-time snapshot', async () => {
     const debugLogs: string[] = [];
     const result = await resolveSshConnectConfig(
