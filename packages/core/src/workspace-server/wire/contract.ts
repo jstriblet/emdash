@@ -1,6 +1,7 @@
 import { defineContract, fallible, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
 import { hostRuntimesDefinitions } from '#services/runtime-broker/api';
+import { workspaceOrchestrationContract } from '../orchestration/contract';
 import { portForwardsContract } from '../port-forwards/contract';
 import {
   wireHealthSchema,
@@ -18,4 +19,5 @@ export const workspaceWireContract = defineContract({
   }),
   ...hostRuntimesDefinitions,
   portForwards: portForwardsContract,
+  orchestration: workspaceOrchestrationContract,
 });

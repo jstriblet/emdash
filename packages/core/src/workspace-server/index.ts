@@ -4,3 +4,4 @@ export * from './releases';
 export * from './wire';
 export * from './shared/schemas';
 export * from './port-forwards/contract';
+export * from './orchestration';

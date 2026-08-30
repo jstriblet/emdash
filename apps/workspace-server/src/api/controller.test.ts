@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { parseAbsolute } from '@emdash/core/primitives/path/api';
 import type { TerminalShellResolver } from '@emdash/core/primitives/terminal-shell/api';
 import type { AcpApiContract } from '@emdash/core/runtimes/acp/api';
+import type { AutomationsContract } from '@emdash/core/runtimes/automations/api';
 import { filesContract } from '@emdash/core/runtimes/files/api';
 import { createFilesController, FilesRuntime } from '@emdash/core/runtimes/files/node';
 import { gitContract } from '@emdash/core/runtimes/git/api';
@@ -20,9 +21,75 @@ import { client as createClient, connect, serve, streamTransport } from '@emdash
 import type { ContractClient } from '@emdash/wire/rpc';
 import { createTestWire } from '@emdash/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { createTestWorkspaceWireController } from '../testing/controller';
+import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
 
 describe('createWorkspaceWireController', () => {
+  it('launches an Orc execution through the host automation runtime', async () => {
+    const run = {
+      id: 'run-1',
+      seq: 1,
+      automationId: 'exec-1',
+      status: 'queued' as const,
+      triggerKind: 'manual' as const,
+      configSnapshot: {
+        name: 'Orc: update README',
+        schedule: { expr: '0 0 1 1 *', tz: 'UTC' },
+        agent: {
+          type: 'tui' as const,
+          start: {
+            providerId: 'codex',
+            model: null,
+            initialPrompt: 'update README',
+            autoApprove: true,
+          },
+        },
+        workspace: {
+          kind: 'directory' as const,
+          path: {
+            host: { type: 'local' as const, id: 'local' },
+            path: { root: { kind: 'posix' as const }, segments: ['tmp'] },
+          },
+        },
+      },
+      generatedName: 'orc-exec-1',
+      scheduledAt: null,
+      deadlineAt: null,
+      startedAt: null,
+      finishedAt: null,
+      workspace: null,
+      branchName: null,
+      conversationId: null,
+      sessionId: null,
+      error: null,
+    };
+    const automations = Object.assign(createTestRuntimeClients().automations, {
+      deploy: vi.fn(async () => ok({ deployment: {}, deployedAt: 1 })),
+      startRun: vi.fn(async () => ok({ run })),
+    }) as unknown as ContractClient<AutomationsContract>;
+    const controller = createTestWorkspaceWireController({ automations });
+
+    await expect(
+      controller.call(
+        'orchestration.launch',
+        {
+          executionId: 'exec-1',
+          repositoryPath: '/home/user/src/bookscape',
+          worktreeRoot: '/home/user/worktrees',
+          baseBranch: 'main',
+          baseRemote: 'origin',
+          goal: 'update README',
+          provider: 'codex',
+          model: null,
+        },
+        { signal: new AbortController().signal }
+      )
+    ).resolves.toEqual(ok(run));
+    expect(automations.deploy).toHaveBeenCalledWith(
+      expect.objectContaining({ automationId: 'exec-1', enabled: true })
+    );
+    expect(automations.startRun).toHaveBeenCalledWith({ automationId: 'exec-1' });
+  });
+
   it('forwards ACP procedures to the mounted runtime client', async () => {
     const acp = createFakeAcpClient();
     const clientToServer = new PassThrough();

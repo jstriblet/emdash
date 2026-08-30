@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
+import { LOCAL_HOST_REF } from '@emdash/core/primitives/host/api';
+import { parseAbsolute } from '@emdash/core/primitives/path/api';
 import type { HostDependenciesContract } from '@emdash/core/services/host-dependencies/api';
 import {
   negotiateProtocol,
@@ -88,6 +90,89 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
       deps.hostDependencies
     ),
     portForwards: createPortForwardsController(),
+    orchestration: {
+      launch: async (input) => {
+        const repository = parsePosixPath(input.repositoryPath);
+        const worktreePoolPath = parsePosixPath(`${input.worktreeRoot}/.orc-worktree`);
+        const deployed = await deps.runtimes.automations.deploy({
+          automationId: input.executionId,
+          revision: 1,
+          enabled: true,
+          name: `Orc: ${input.goal.slice(0, 80)}`,
+          schedule: { expr: '0 0 1 1 *', tz: 'UTC' },
+          agent: {
+            type: 'tui',
+            title: input.goal.slice(0, 120),
+            start: {
+              providerId: input.provider,
+              model: input.model,
+              initialPrompt: input.goal,
+              autoApprove: true,
+            },
+          },
+          workspace: {
+            kind: 'worktree',
+            repository: { host: LOCAL_HOST_REF, path: repository },
+            worktreePoolPath,
+            baseRemote: input.baseRemote,
+            preservePatterns: [],
+            git: {
+              kind: 'create-branch',
+              fromBranch: { type: 'local', branch: input.baseBranch },
+              pushRemote: null,
+            },
+          },
+        });
+        if (!deployed.success) return orchestrationFailure(deployed.error);
+        const started = await deps.runtimes.automations.startRun({
+          automationId: input.executionId,
+        });
+        return started.success ? ok(started.data.run) : orchestrationFailure(started.error);
+      },
+      get: async ({ executionId }) => {
+        const listed = await deps.runtimes.automations.listRuns({
+          automationId: executionId,
+          limit: 10,
+        });
+        return listed.success
+          ? ok(listed.data.runs.find((run) => run.triggerKind === 'manual') ?? null)
+          : orchestrationFailure(listed.error);
+      },
+      cancel: async ({ executionId }) => {
+        const listed = await deps.runtimes.automations.listRuns({
+          automationId: executionId,
+          limit: 10,
+        });
+        if (!listed.success) return orchestrationFailure(listed.error);
+        const active = listed.data.runs.find(
+          (run) => run.triggerKind === 'manual' && run.finishedAt === null
+        );
+        if (!active) return ok(undefined);
+        const cancelled = await deps.runtimes.automations.cancelRun({
+          automationId: executionId,
+          runId: active.id,
+        });
+        return cancelled.success ? ok(undefined) : orchestrationFailure(cancelled.error);
+      },
+    },
+  });
+}
+
+function parsePosixPath(value: string) {
+  const parsed = parseAbsolute(value, {
+    profile: { style: 'posix', unicodeNormalization: 'preserve' },
+  });
+  if (!parsed.success) throw new Error(parsed.error.message);
+  return parsed.data;
+}
+
+function orchestrationFailure(error: unknown) {
+  return err({
+    type: 'operation-failed' as const,
+    message:
+      error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : String(error),
   });
 }
 
