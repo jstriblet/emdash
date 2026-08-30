@@ -1,8 +1,13 @@
 import { Markdown } from '@emdash/ui/react/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
+import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
 import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
+import {
+  createOrchestratedWorkSession,
+  parseOrchestratedWorkRequest,
+} from './orchestrated-work-request';
 
 const REFRESH_INTERVAL_MS = 2_000;
 const DISPLAY_TURNS = 4;
@@ -70,6 +75,7 @@ function activityDetail(detail: string): { hidden: number; lines: string[] } {
 }
 
 export function ThreadPanel() {
+  const { navigate } = useNavigate();
   const [entries, setEntries] = useState<OrchestratorEntry[]>([]);
   const [health, setHealth] = useState<OrchestratorHealth>();
   const [draft, setDraft] = useState('');
@@ -152,6 +158,11 @@ export function ThreadPanel() {
     setDraft('');
     setError(undefined);
     try {
+      const workRequest = parseOrchestratedWorkRequest(text);
+      if (workRequest) {
+        await createOrchestratedWorkSession(workRequest, navigate);
+        return;
+      }
       const client = await getOrchestratorClient();
       await client.send({ text });
       await refresh();
