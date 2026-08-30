@@ -6,4 +6,6 @@ export type {
   OrchestratorThread,
   OrchestratorWorkContract,
   OrchestratorWorkSessionAction,
+  OrchestratorWorkerInputAction,
+  OrchestratorPendingAction,
 } from '@emdash/core/runtimes/orchestrator/api';

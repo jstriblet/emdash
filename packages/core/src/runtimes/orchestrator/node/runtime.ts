@@ -9,7 +9,7 @@ import {
   orchestratorThreadSchema,
   type OrchestratorActionResolution,
   type OrchestratorActionProgressInput,
-  type OrchestratorWorkSessionAction,
+  type OrchestratorPendingAction,
   type OrchestratorWorkerTelemetryInput,
   type OrchestratorHealth,
   type OrchestratorExecutionLinkInput,
@@ -72,11 +72,11 @@ export class OrchestratorRuntime {
     );
   }
 
-  pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }> {
+  pendingActions(): Promise<{ actions: OrchestratorPendingAction[] }> {
     return this.#request('/actions/pending', undefined, orchestratorPendingActionsSchema.parse);
   }
 
-  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }> {
+  claimAction(): Promise<{ action: OrchestratorPendingAction | null }> {
     return this.#request(
       '/actions/claim',
       { method: 'POST' },

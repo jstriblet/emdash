@@ -5,7 +5,7 @@ import { getConversationsClient } from '@core/features/conversations/api/browser
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
 import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
-import type { OrchestratorEntry, OrchestratorHealth, OrchestratorWorkSessionAction } from '../api';
+import type { OrchestratorEntry, OrchestratorHealth, OrchestratorPendingAction } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
 import {
   createOrchestratedWorkSession,
@@ -201,13 +201,23 @@ export function ThreadPanel() {
   }, [refresh]);
 
   const executeMcpAction = useCallback(
-    async (action: OrchestratorWorkSessionAction) => {
+    async (action: OrchestratorPendingAction) => {
       if (activeMcpActionIdsRef.current.has(action.action_id)) return;
       activeMcpActionIdsRef.current.add(action.action_id);
       setSending(true);
       setError(undefined);
       try {
         const client = await getOrchestratorClient();
+        if (action.kind === 'send_worker_input') {
+          const conversationsClient = await getConversationsClient();
+          await conversationsClient.tui.sendInput({
+            conversationId: action.conversation_id,
+            data: action.input,
+          });
+          await client.completeAction({ actionId: action.action_id });
+          await refresh();
+          return;
+        }
         await createOrchestratedWorkSession(
           {
             projectName: action.project_name,

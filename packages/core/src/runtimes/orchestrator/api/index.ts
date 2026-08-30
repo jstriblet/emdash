@@ -6,6 +6,7 @@ export {
   orchestratorActionCompletionSchema,
   orchestratorClaimedActionSchema,
   orchestratorPendingActionsSchema,
+  orchestratorPendingActionSchema,
   orchestratorEntrySchema,
   orchestratorExecutionLinkInputSchema,
   orchestratorExecutionLinkSchema,
@@ -32,5 +33,7 @@ export {
   type OrchestratorWorkContractInput,
   type OrchestratorWorkContractUpdateInput,
   type OrchestratorWorkSessionAction,
+  type OrchestratorWorkerInputAction,
+  type OrchestratorPendingAction,
   type OrchestratorWorkerTelemetryInput,
 } from './schemas';

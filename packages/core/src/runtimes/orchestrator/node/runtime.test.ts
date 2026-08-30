@@ -92,6 +92,20 @@ describe('OrchestratorRuntime', () => {
     );
   });
 
+  it('claims typed input actions for blocked workers', async () => {
+    const action = {
+      kind: 'send_worker_input',
+      action_id: 'action-2',
+      execution_id: 'execution-1',
+      conversation_id: 'conversation-1',
+      input: '1\n',
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ action }));
+    const runtime = new OrchestratorRuntime({ baseUrl: 'http://orc.test', fetch });
+
+    await expect(runtime.claimAction()).resolves.toEqual({ action });
+  });
+
   it('reports Emdash action progress to Orc', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

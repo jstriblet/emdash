@@ -13,7 +13,7 @@ import type {
   OrchestratorWorkContract,
   OrchestratorWorkContractInput,
   OrchestratorWorkContractUpdateInput,
-  OrchestratorWorkSessionAction,
+  OrchestratorPendingAction,
   OrchestratorWorkerTelemetryInput,
 } from '@emdash/core/runtimes/orchestrator/api';
 import type { SshServiceHandle } from '@core/manifests/node/ssh-service-handle';
@@ -35,8 +35,8 @@ export type OrchestratorRuntimeClient = {
   thread(limit?: number): Promise<OrchestratorThread>;
   send(text: string): Promise<OrchestratorReply>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
-  pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }>;
-  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }>;
+  pendingActions(): Promise<{ actions: OrchestratorPendingAction[] }>;
+  claimAction(): Promise<{ action: OrchestratorPendingAction | null }>;
   completeAction(actionId: string): Promise<{ completed: boolean }>;
   reportWorkerTelemetry(input: OrchestratorWorkerTelemetryInput): Promise<{ recorded: boolean }>;
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
@@ -167,11 +167,11 @@ export class OrchestratorService {
     return this.runtime.resolveAction(text);
   }
 
-  pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }> {
+  pendingActions(): Promise<{ actions: OrchestratorPendingAction[] }> {
     return this.runtime.pendingActions();
   }
 
-  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }> {
+  claimAction(): Promise<{ action: OrchestratorPendingAction | null }> {
     return this.runtime.claimAction();
   }
 

@@ -56,16 +56,29 @@ export const orchestratorWorkSessionActionSchema = z.object({
   ),
 });
 
+export const orchestratorWorkerInputActionSchema = z.object({
+  kind: z.literal('send_worker_input'),
+  action_id: z.string().min(1),
+  execution_id: z.string().min(1),
+  conversation_id: z.string().min(1),
+  input: z.string().min(1).max(1_000),
+});
+
+export const orchestratorPendingActionSchema = z.discriminatedUnion('kind', [
+  orchestratorWorkSessionActionSchema,
+  orchestratorWorkerInputActionSchema,
+]);
+
 export const orchestratorActionResolutionSchema = z.object({
   action: orchestratorWorkSessionActionSchema.nullable(),
 });
 
 export const orchestratorPendingActionsSchema = z.object({
-  actions: z.array(orchestratorWorkSessionActionSchema),
+  actions: z.array(orchestratorPendingActionSchema),
 });
 
 export const orchestratorClaimedActionSchema = z.object({
-  action: orchestratorWorkSessionActionSchema.nullable(),
+  action: orchestratorPendingActionSchema.nullable(),
 });
 
 export const orchestratorActionCompletionSchema = z.object({ completed: z.boolean() });
@@ -206,6 +219,8 @@ export type OrchestratorReply = z.infer<typeof orchestratorReplySchema>;
 export type OrchestratorActionResolution = z.infer<typeof orchestratorActionResolutionSchema>;
 export type OrchestratorActionProgressInput = z.infer<typeof orchestratorActionProgressInputSchema>;
 export type OrchestratorWorkSessionAction = z.infer<typeof orchestratorWorkSessionActionSchema>;
+export type OrchestratorWorkerInputAction = z.infer<typeof orchestratorWorkerInputActionSchema>;
+export type OrchestratorPendingAction = z.infer<typeof orchestratorPendingActionSchema>;
 export type OrchestratorWorkerTelemetryInput = z.infer<
   typeof orchestratorWorkerTelemetryInputSchema
 >;
