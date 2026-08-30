@@ -45,10 +45,6 @@ export function isInteractiveTerminalPrompt(value: string): boolean {
   );
 }
 
-export function shouldRetainWorkerForOrcReply(reply: string): boolean {
-  return reply.trimEnd().endsWith('?');
-}
-
 export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps) {
   const appVersion = deps.appVersion ?? '0.0.0';
   const daemonId = deps.daemonId ?? defaultDaemonId;
@@ -240,19 +236,6 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     return workspaceDeleted.success ? ok(undefined) : orchestrationFailure(workspaceDeleted.error);
   };
 
-  const archiveOrcExecution = async (executionId: string, conversationId: string) => {
-    const archived = await archiveExecution(executionId);
-    await fetch(`http://127.0.0.1:8790/workers/${encodeURIComponent(executionId)}/archived`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        success: archived.success,
-        detail: archived.success ? null : archived.error.message,
-      }),
-    });
-    if (archived.success) orcExecutions.delete(conversationId);
-  };
-
   const publishOrcTransitions = async () => {
     for (const [executionId, projectId] of pendingOrcExecutions) {
       const found = await findManualRun(executionId);
@@ -299,21 +282,7 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
           }),
         }
       );
-      const relayedReply = response.ok ? await relayWorkerMessage(message) : '';
-      if (!response.ok || status !== 'completed') continue;
-      // Orc owns the user-facing handoff. If its synthesis asks the user to decide what
-      // happens next, retain the completed provider session so follow-up input can resume it.
-      if (shouldRetainWorkerForOrcReply(relayedReply)) continue;
-      const directive = (await response.json()) as { action?: string; archive_delay_ms?: number };
-      if (directive.action !== 'archive') continue;
-      const archiveDelayMs = Math.max(0, Math.min(directive.archive_delay_ms ?? 0, 60_000));
-      if (archiveDelayMs === 0) {
-        await archiveOrcExecution(execution.executionId, conversationId);
-      } else {
-        setTimeout(() => {
-          void archiveOrcExecution(execution.executionId, conversationId);
-        }, archiveDelayMs);
-      }
+      if (response.ok) await relayWorkerMessage(message);
     }
   };
 

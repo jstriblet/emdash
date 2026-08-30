@@ -23,7 +23,7 @@ import type { ContractClient } from '@emdash/wire/rpc';
 import { createTestWire } from '@emdash/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
-import { isInteractiveTerminalPrompt, shouldRetainWorkerForOrcReply } from './controller';
+import { isInteractiveTerminalPrompt } from './controller';
 
 describe('isInteractiveTerminalPrompt', () => {
   it('recognizes a Claude workspace trust dialog after terminal cleanup', () => {
@@ -39,18 +39,8 @@ describe('isInteractiveTerminalPrompt', () => {
   });
 });
 
-describe('shouldRetainWorkerForOrcReply', () => {
-  it('retains a finished worker when Orc asks the user for a decision', () => {
-    expect(shouldRetainWorkerForOrcReply('Should I implement the permanent fix?')).toBe(true);
-  });
-
-  it('allows cleanup after a final summary with no outstanding question', () => {
-    expect(shouldRetainWorkerForOrcReply('The requested work is complete.')).toBe(false);
-  });
-});
-
 describe('createWorkspaceWireController', () => {
-  it('pushes blocked and completed worker events to Orc and archives after acknowledgement', async () => {
+  it('pushes worker events to Orc without automatically archiving completed work', async () => {
     const run = {
       id: 'run-push',
       seq: 1,
@@ -154,13 +144,7 @@ describe('createWorkspaceWireController', () => {
       vi.fn(async (url: string, init: RequestInit) => {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         requests.push({ url, body });
-        return {
-          ok: true,
-          json: async () => ({
-            action: body.status === 'completed' ? 'archive' : null,
-            archive_delay_ms: body.status === 'completed' ? 50 : undefined,
-          }),
-        };
+        return { ok: true, json: async () => ({ action: 'archive', archive_delay_ms: 0 }) };
       })
     );
     const controller = createTestWorkspaceWireController(
@@ -203,8 +187,6 @@ describe('createWorkspaceWireController', () => {
     };
     notify();
     await vi.waitFor(() => expect(requests).toHaveLength(4));
-    expect(tuiAgents.delete).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(requests).toHaveLength(5));
     expect(requests[2]?.body.status).toBe('completed');
     expect(requests[2]?.body.prompt_excerpt).toBe('Created and verified the requested file.');
     expect(requests[2]?.body).toMatchObject({
@@ -216,12 +198,11 @@ describe('createWorkspaceWireController', () => {
       url: 'http://127.0.0.1:8790/message',
       body: { text: 'Created and verified the requested file.' },
     });
-    expect(requests[4]?.url).toContain('/workers/exec-push/archived');
-    expect(tuiAgents.delete).toHaveBeenCalledWith({ conversationId: 'conversation-push' });
-    expect(workspaceRegistry.deleteWorktree).toHaveBeenCalledWith({
-      workspaceId: 'run-push',
-      deleteBranch: true,
-    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(requests).toHaveLength(4);
+    expect(tuiAgents.delete).not.toHaveBeenCalled();
+    expect(conversations.delete).not.toHaveBeenCalled();
+    expect(workspaceRegistry.deleteWorktree).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
