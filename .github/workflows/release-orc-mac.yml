@@ -53,6 +53,12 @@ jobs:
           VITE_BUILD: orc
         run: pnpm run build
 
+      - name: Rebuild native modules for Electron
+        working-directory: apps/emdash-desktop
+        run: >-
+          node --experimental-strip-types scripts/release/rebuild-native.ts
+          --arch arm64
+
       - name: Build signed Emdash Orc DMG and updater ZIP
         working-directory: apps/emdash-desktop
         env:
