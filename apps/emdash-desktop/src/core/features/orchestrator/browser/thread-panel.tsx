@@ -213,8 +213,8 @@ export function ThreadPanel() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const { actions } = await (await getOrchestratorClient()).pendingActions(undefined);
-        if (!cancelled) actions.forEach((action) => void executeMcpAction(action));
+        const { action } = await (await getOrchestratorClient()).claimAction(undefined);
+        if (!cancelled && action) void executeMcpAction(action);
       } catch {
         // Connection errors are already represented by the Thread panel health state.
       }

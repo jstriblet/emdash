@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   orchestratorActionResolutionSchema,
   orchestratorActionCompletionSchema,
+  orchestratorClaimedActionSchema,
   orchestratorPendingActionsSchema,
   orchestratorActionProgressInputSchema,
   orchestratorActionProgressResultSchema,
@@ -39,6 +40,7 @@ export const orchestratorContract = defineContract({
     output: orchestratorActionResolutionSchema,
   }),
   pendingActions: procedure({ input: z.void(), output: orchestratorPendingActionsSchema }),
+  claimAction: procedure({ input: z.void(), output: orchestratorClaimedActionSchema }),
   completeAction: procedure({
     input: z.object({ actionId: z.string().min(1) }),
     output: orchestratorActionCompletionSchema,

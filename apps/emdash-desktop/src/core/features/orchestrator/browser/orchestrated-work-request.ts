@@ -256,21 +256,20 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
     throw new Error('Orc found multiple machines; name the machine that contains the repository');
   }
   const normalized = hostName.trim().toLowerCase();
-  const connection = machines.connections.find(
-    (candidate) =>
-      candidate.name.toLowerCase() === normalized || candidate.host.toLowerCase() === normalized
-  );
-  if (connection) {
-    let connectionId = connection.id;
-    if (connection.authType === 'password') {
-      const resolved = await machines.getSshConfigHost(hostName.trim());
-      const repaired = await machines.saveConnection({
-        ...sshConfigHostToConnection(resolved),
-        id: connection.id,
-        name: connection.name,
-      });
-      connectionId = repaired.id;
+  let connection = findExistingMachine(machines.connections, normalized);
+  let configuredHost: SshConfigHost | undefined;
+  if (!connection) {
+    const configuredHosts = await machines.getSshConfigHosts();
+    configuredHost =
+      findSshConfigHost(configuredHosts, hostName) ??
+      (await machines.getSshConfigHost(hostName.trim()).catch(() => undefined));
+    const resolvedHostname = configuredHost?.hostname?.trim().toLowerCase();
+    if (resolvedHostname) {
+      connection = findExistingMachine(machines.connections, normalized, resolvedHostname);
     }
+  }
+  if (connection) {
+    const connectionId = connection.id;
     await machines.connect(connectionId);
     await waitForMachineConnection(machines, connectionId);
     if (machines.stateFor(connectionId) !== 'connected') {
@@ -279,10 +278,8 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
     return { type: 'ssh', connectionId };
   }
 
-  const configuredHosts = await machines.getSshConfigHosts();
   const sshConfigHost =
-    findSshConfigHost(configuredHosts, hostName) ??
-    (await machines.getSshConfigHost(hostName.trim()).catch(() => undefined));
+    configuredHost ?? (await machines.getSshConfigHost(hostName.trim()).catch(() => undefined));
   if (!sshConfigHost) {
     throw new Error(`Orc could not find “${hostName}” in Emdash Machines or this Mac’s SSH config`);
   }
@@ -293,6 +290,22 @@ async function resolveProjectHost(hostName: string): Promise<OrchestratedProject
     throw new Error(`SSH connection to “${hostName}” failed`);
   }
   return { type: 'ssh', connectionId: saved.id };
+}
+
+export function findExistingMachine<T extends { name: string; host: string }>(
+  connections: T[],
+  requestedHost: string,
+  resolvedHostname?: string
+): T | undefined {
+  const requested = requestedHost.trim().toLowerCase();
+  const resolved = resolvedHostname?.trim().toLowerCase();
+  return connections.find((candidate) => {
+    const name = candidate.name.trim().toLowerCase();
+    const host = candidate.host.trim().toLowerCase();
+    return (
+      name === requested || host === requested || (resolved !== undefined && host === resolved)
+    );
+  });
 }
 
 async function waitForMachineConnection(

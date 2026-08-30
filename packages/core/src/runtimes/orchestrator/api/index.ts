@@ -4,6 +4,7 @@ export {
   orchestratorActionProgressInputSchema,
   orchestratorActionProgressResultSchema,
   orchestratorActionCompletionSchema,
+  orchestratorClaimedActionSchema,
   orchestratorPendingActionsSchema,
   orchestratorEntrySchema,
   orchestratorExecutionLinkInputSchema,

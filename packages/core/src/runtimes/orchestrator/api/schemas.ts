@@ -64,6 +64,10 @@ export const orchestratorPendingActionsSchema = z.object({
   actions: z.array(orchestratorWorkSessionActionSchema),
 });
 
+export const orchestratorClaimedActionSchema = z.object({
+  action: orchestratorWorkSessionActionSchema.nullable(),
+});
+
 export const orchestratorActionCompletionSchema = z.object({ completed: z.boolean() });
 
 export const orchestratorActionProgressInputSchema = z.object({

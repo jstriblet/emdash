@@ -23,6 +23,7 @@ export type OrchestratorRuntimePort = {
   send(text: string): Promise<OrchestratorReply>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }>;
+  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }>;
   completeAction(actionId: string): Promise<{ completed: boolean }>;
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
@@ -47,6 +48,7 @@ export function createOrchestratorWireController(runtime: OrchestratorRuntimePor
     send: ({ text }) => runtime.send(text),
     resolveAction: ({ text }) => runtime.resolveAction(text),
     pendingActions: () => runtime.pendingActions(),
+    claimAction: () => runtime.claimAction(),
     completeAction: ({ actionId }) => runtime.completeAction(actionId),
     reportActionProgress: (input) => runtime.reportActionProgress(input),
     workContracts: () => runtime.workContracts(),

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   orchestratorActionResolutionSchema,
   orchestratorPendingActionsSchema,
+  orchestratorClaimedActionSchema,
   orchestratorHealthSchema,
   orchestratorReplySchema,
   orchestratorWorkContractSchema,
@@ -72,6 +73,14 @@ export class OrchestratorRuntime {
 
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }> {
     return this.#request('/actions/pending', undefined, orchestratorPendingActionsSchema.parse);
+  }
+
+  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }> {
+    return this.#request(
+      '/actions/claim',
+      { method: 'POST' },
+      orchestratorClaimedActionSchema.parse
+    );
   }
 
   completeAction(actionId: string): Promise<{ completed: boolean }> {

@@ -35,6 +35,7 @@ export type OrchestratorRuntimeClient = {
   send(text: string): Promise<OrchestratorReply>;
   resolveAction(text: string): Promise<OrchestratorActionResolution>;
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }>;
+  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }>;
   completeAction(actionId: string): Promise<{ completed: boolean }>;
   reportActionProgress(input: OrchestratorActionProgressInput): Promise<{ recorded: boolean }>;
   workContracts(): Promise<{ workContracts: OrchestratorWorkContract[] }>;
@@ -166,6 +167,10 @@ export class OrchestratorService {
 
   pendingActions(): Promise<{ actions: OrchestratorWorkSessionAction[] }> {
     return this.runtime.pendingActions();
+  }
+
+  claimAction(): Promise<{ action: OrchestratorWorkSessionAction | null }> {
+    return this.runtime.claimAction();
   }
 
   completeAction(actionId: string): Promise<{ completed: boolean }> {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   findSshConfigHost,
+  findExistingMachine,
   parseOrchestratedWorkRequest,
   projectPathCandidates,
   runStage,
@@ -100,6 +101,15 @@ describe('runStage', () => {
 });
 
 describe('SSH config host discovery', () => {
+  it('reuses an IP-address machine when an SSH alias resolves to that address', () => {
+    expect(
+      findExistingMachine(
+        [{ id: 'existing', name: '192.168.1.195', host: '192.168.1.195' }],
+        'ThinkCenter',
+        '192.168.1.195'
+      )
+    ).toMatchObject({ id: 'existing' });
+  });
   it('matches a requested machine name to a case-insensitive SSH alias', () => {
     expect(
       findSshConfigHost(
