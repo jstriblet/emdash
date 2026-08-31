@@ -20,7 +20,13 @@ import type { WorkspaceServerRuntimeClients } from '../gateway/workspace-workers
 type ControllerMetadata = Partial<
   Pick<
     WorkspaceWireControllerDeps,
-    'appVersion' | 'daemonId' | 'startedAt' | 'enableOrcCallbacks' | 'loadOrcExecutions'
+    | 'appVersion'
+    | 'daemonId'
+    | 'startedAt'
+    | 'enableOrcCallbacks'
+    | 'enableOrcActionConsumer'
+    | 'orcActionSignal'
+    | 'loadOrcExecutions'
   >
 >;
 

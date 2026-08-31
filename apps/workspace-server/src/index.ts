@@ -61,11 +61,15 @@ async function serve(config: WorkspaceServerConfig, logger: Logger): Promise<Dis
       shellEnv,
       logger,
     });
+    const orcActionController = new AbortController();
+    scope.add(() => orcActionController.abort());
     const controller = createWorkspaceWireController({
       appVersion: config.appVersion,
       runtimes: runtimeHost.runtimes,
       hostDependencies: runtimeHost.hostDependencies,
       enableOrcCallbacks: true,
+      enableOrcActionConsumer: true,
+      orcActionSignal: orcActionController.signal,
     });
 
     if (config.serve.kind !== 'socket') {

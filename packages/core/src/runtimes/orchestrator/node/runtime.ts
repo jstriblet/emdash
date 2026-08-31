@@ -105,6 +105,10 @@ export class OrchestratorRuntime {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
+          schema_version: 1,
+          event_id: input.eventId,
+          source_sequence: input.sourceSequence,
+          incarnation_id: input.incarnationId,
           emdash_task_id: input.emdashTaskId,
           project_id: input.projectId,
           conversation_id: input.conversationId,

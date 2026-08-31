@@ -20,6 +20,8 @@ export type WorkspaceWireControllerDeps = {
   daemonId?: string;
   startedAt?: number;
   enableOrcCallbacks?: boolean;
+  enableOrcActionConsumer?: boolean;
+  orcActionSignal?: AbortSignal;
   loadOrcExecutions?: () => Promise<
     Array<{ conversationId: string; executionId: string; projectId: string }>
   >;
@@ -32,6 +34,29 @@ const ansiEscapePattern =
 
 function cleanWorkerText(value: string): string {
   return value.replace(ansiEscapePattern, '').replace(/\r/g, '').trim();
+}
+
+export function orcWorkerEventId(input: {
+  executionId: string;
+  conversationId: string;
+  status: string;
+  sourceSequence: number;
+  message: string;
+}): string {
+  const fingerprint = crypto.createHash('sha256').update(input.message).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(
+      `${input.executionId}\0${input.conversationId}\0${input.status}\0${input.sourceSequence}\0${fingerprint}`
+    )
+    .digest('hex');
+}
+
+function orcCallbackHeaders(): Record<string, string> {
+  const token = process.env.ORC_CALLBACK_TOKEN;
+  return token
+    ? { 'content-type': 'application/json', 'x-orc-callback-token': token }
+    : { 'content-type': 'application/json' };
 }
 
 export function isInteractiveTerminalPrompt(value: string): boolean {
@@ -56,25 +81,6 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
   const pendingOrcExecutions = new Map<string, string>();
   const watchedOrcConversations = new Set<string>();
   const pushedPromptFingerprints = new Map<string, string>();
-  let orcMessageQueue = Promise.resolve();
-
-  const relayWorkerMessage = (message: string): Promise<string> => {
-    let reply = '';
-    const relay = orcMessageQueue.then(async () => {
-      const response = await fetch('http://127.0.0.1:8790/message', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ surface: 'terminal', text: message }),
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!response.ok) return;
-      const payload = (await response.json()) as { reply?: string };
-      reply = payload.reply ?? '';
-    });
-    orcMessageQueue = relay.catch(() => undefined);
-    return relay.then(() => reply).catch(() => '');
-  };
-
   const loadOrcExecutions =
     deps.loadOrcExecutions ??
     (async () => {
@@ -118,31 +124,46 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     conversationId: string,
     execution: { executionId: string; projectId: string },
     message: string,
-    provider?: string
+    provider?: string,
+    sourceSequence?: number
   ) => {
     const fingerprint = crypto.createHash('sha256').update(message).digest('hex');
     if (pushedPromptFingerprints.get(execution.executionId) === fingerprint) return;
     pushedPromptFingerprints.set(execution.executionId, fingerprint);
-    const response = await fetch(
-      `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          emdash_task_id: execution.executionId,
-          execution_id: execution.executionId,
-          project_id: execution.projectId,
-          conversation_id: conversationId,
-          provider,
-          status: 'blocked',
-          notification_type: 'elicitation_dialog',
-          prompt_excerpt: message,
-          observed_at: new Date().toISOString(),
-        }),
-      }
-    );
-    if (!response.ok) return;
-    void relayWorkerMessage(message);
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
+        {
+          method: 'POST',
+          headers: orcCallbackHeaders(),
+          body: JSON.stringify({
+            schema_version: 1,
+            event_id: orcWorkerEventId({
+              executionId: execution.executionId,
+              conversationId,
+              status: 'blocked',
+              sourceSequence: sourceSequence ?? 0,
+              message,
+            }),
+            source_sequence: sourceSequence,
+            incarnation_id: conversationId,
+            emdash_task_id: execution.executionId,
+            execution_id: execution.executionId,
+            project_id: execution.projectId,
+            conversation_id: conversationId,
+            provider,
+            status: 'blocked',
+            notification_type: 'elicitation_dialog',
+            prompt_excerpt: message,
+            observed_at: new Date().toISOString(),
+          }),
+        }
+      );
+      if (!response.ok) pushedPromptFingerprints.delete(execution.executionId);
+    } catch {
+      // Retained output is inspected again by reconciliation; do not suppress this prompt.
+      pushedPromptFingerprints.delete(execution.executionId);
+    }
   };
 
   const watchInteractiveTerminalPrompts = (
@@ -159,11 +180,13 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         const states = await deps.runtimes.tuiAgents.agentStates
           .state(undefined, 'list')
           .snapshot();
+        const state = states.data[conversationId];
         await pushBlockedPrompt(
           conversationId,
           execution,
           message,
-          states.data[conversationId]?.providerId
+          state?.providerId,
+          state?.updatedAt
         );
       });
     };
@@ -228,10 +251,16 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     if (!run) return ok(undefined);
     const conversationId = run.conversationId;
     if (conversationId) {
-      const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
-      if (!deleted.success) return orchestrationFailure(deleted.error);
-      const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
-      if (!conversationDeleted.success) return orchestrationFailure(conversationDeleted.error);
+      const states = await deps.runtimes.tuiAgents.agentStates.state(undefined, 'list').snapshot();
+      if (states.data[conversationId]) {
+        const deleted = await deps.runtimes.tuiAgents.delete({ conversationId });
+        if (!deleted.success) return orchestrationFailure(deleted.error);
+      }
+      const records = await deps.runtimes.conversations.records.state(undefined, 'list').snapshot();
+      if (records.data[conversationId]) {
+        const conversationDeleted = await deps.runtimes.conversations.delete({ conversationId });
+        if (!conversationDeleted.success) return orchestrationFailure(conversationDeleted.error);
+      }
     }
     const workspaceDeleted = await deps.runtimes.workspaceRegistry.deleteWorktree({
       workspaceId: run.id,
@@ -240,7 +269,131 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     return workspaceDeleted.success ? ok(undefined) : orchestrationFailure(workspaceDeleted.error);
   };
 
+  const restartExecution = async (executionId: string, goal: string) => {
+    const found = await findManualRun(executionId);
+    if (!found.success) return err(found.error);
+    const conversationId = found.data?.conversationId;
+    if (!conversationId) {
+      return orchestrationFailure(new Error('Worker conversation is not available'));
+    }
+    const records = await deps.runtimes.conversations.records.state(undefined, 'list').snapshot();
+    const record = records.data[conversationId];
+    if (!record) return orchestrationFailure(new Error('Worker conversation record is missing'));
+    const config = record.config;
+    const resumed = await deps.runtimes.tuiAgents.resume({
+      conversationId,
+      providerId: record.provider,
+      cwd: record.cwd,
+      sessionId: record.providerSessionId,
+      chosenSessionId: null,
+      model: typeof config.model === 'string' ? config.model : null,
+      initialPrompt: goal,
+      autoApprove: config.autoApprove === true,
+      trustWorkspace: config.trustWorkspace === true,
+      cols: 120,
+      rows: 40,
+    });
+    return resumed.success ? ok(undefined) : orchestrationFailure(resumed.error);
+  };
+
+  const consumeOrcAction = async () => {
+    const claimed = await fetch('http://127.0.0.1:8790/actions/claim', {
+      method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!claimed.ok) return;
+    const { action } = (await claimed.json()) as {
+      action?: Record<string, string> | null;
+    };
+    if (!action) return;
+    let outcome;
+    if (action.kind === 'send_worker_input') {
+      const found = await findManualRun(action.execution_id);
+      if (!found.success || !found.data?.conversationId) {
+        outcome = orchestrationFailure(new Error('Worker conversation is not available'));
+      } else {
+        outcome = await deps.runtimes.tuiAgents.sendInput({
+          conversationId: found.data.conversationId,
+          data: `${action.input}\r`,
+        });
+      }
+    } else if (action.kind === 'archive_worker') {
+      outcome = await archiveExecution(action.execution_id);
+    } else if (action.kind === 'restart_worker') {
+      outcome = await restartExecution(action.execution_id, action.goal);
+    } else {
+      outcome = orchestrationFailure(new Error(`Unsupported always-on Orc action: ${action.kind}`));
+    }
+    if (outcome.success) {
+      if (action.kind === 'archive_worker') {
+        const archived = await fetch(
+          `http://127.0.0.1:8790/workers/${encodeURIComponent(action.execution_id)}/archived`,
+          {
+            method: 'POST',
+            headers: orcCallbackHeaders(),
+            body: JSON.stringify({ success: true }),
+            signal: AbortSignal.timeout(10_000),
+          }
+        );
+        if (!archived.ok) {
+          throw new Error(`Orc archive callback failed with HTTP ${archived.status}`);
+        }
+      }
+      const completed = await fetch(
+        `http://127.0.0.1:8790/actions/${encodeURIComponent(action.action_id)}/complete`,
+        { method: 'POST', signal: AbortSignal.timeout(10_000) }
+      );
+      if (!completed.ok) {
+        throw new Error(`Orc action completion failed with HTTP ${completed.status}`);
+      }
+      return;
+    }
+    await fetch(`http://127.0.0.1:8790/actions/${encodeURIComponent(action.action_id)}/progress`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        surface: 'emdash',
+        stage: 'Always-on workspace action',
+        status: 'failed',
+        detail:
+          'message' in outcome.error
+            ? outcome.error.message
+            : `Worker conversation not found: ${outcome.error.conversationId}`,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  };
+
+  if (deps.enableOrcActionConsumer) {
+    let actionQueue = Promise.resolve();
+    const consume = () => {
+      actionQueue = actionQueue.then(consumeOrcAction).catch(() => {});
+    };
+    consume();
+    const timer = setInterval(consume, 1_000);
+    timer.unref();
+    deps.orcActionSignal?.addEventListener('abort', () => clearInterval(timer), { once: true });
+  }
+
   const publishOrcTransitions = async () => {
+    for (const [conversationId, execution] of [...orcExecutions]) {
+      const found = await findManualRun(execution.executionId);
+      const replacement = found.success ? found.data?.conversationId : undefined;
+      if (!replacement || replacement === conversationId) continue;
+      const rebound = await fetch(
+        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/incarnation`,
+        {
+          method: 'POST',
+          headers: orcCallbackHeaders(),
+          body: JSON.stringify({ session_id: replacement }),
+          signal: AbortSignal.timeout(10_000),
+        }
+      ).catch(() => null);
+      if (!rebound?.ok) continue;
+      orcExecutions.delete(conversationId);
+      orcExecutions.set(replacement, execution);
+      watchInteractiveTerminalPrompts(replacement, execution);
+    }
     for (const [executionId, projectId] of pendingOrcExecutions) {
       const found = await findManualRun(executionId);
       if (!found.success || !found.data?.conversationId) continue;
@@ -253,8 +406,6 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     for (const [conversationId, execution] of orcExecutions) {
       const state = states.data[conversationId];
       if (!state || state.status === execution.lastStatus) continue;
-      execution.lastStatus = state.status;
-      if (!['awaiting-input', 'completed', 'error'].includes(state.status)) continue;
       const output = await deps.runtimes.tuiAgents.output.handle({ conversationId }).snapshot();
       const message = cleanWorkerText(
         state.lastAssistantMessage ?? state.message ?? output.data.text.slice(-4000)
@@ -263,30 +414,60 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         state.status === 'completed' &&
         (message.trimEnd().endsWith('?') || /\?\s+›\s+Ask Codex/.test(message));
       const status =
-        state.status === 'awaiting-input' || completedWithQuestion
+        state.status === 'awaiting-input' ||
+        completedWithQuestion ||
+        isInteractiveTerminalPrompt(message)
           ? 'blocked'
           : state.status === 'error'
             ? 'failed'
-            : 'completed';
-      const response = await fetch(
-        `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            emdash_task_id: execution.executionId,
-            execution_id: execution.executionId,
-            project_id: execution.projectId,
-            conversation_id: conversationId,
-            provider: state.providerId,
-            status,
-            notification_type: state.notificationType,
-            prompt_excerpt: message,
-            observed_at: new Date().toISOString(),
-          }),
-        }
-      );
-      if (response.ok) await relayWorkerMessage(message);
+            : state.status;
+      if (status !== 'blocked') pushedPromptFingerprints.delete(execution.executionId);
+      const fingerprint = crypto.createHash('sha256').update(message).digest('hex');
+      if (
+        status === 'blocked' &&
+        pushedPromptFingerprints.get(execution.executionId) === fingerprint
+      ) {
+        execution.lastStatus = state.status;
+        continue;
+      }
+      if (status === 'blocked') {
+        pushedPromptFingerprints.set(execution.executionId, fingerprint);
+      }
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:8790/workers/${encodeURIComponent(execution.executionId)}/telemetry`,
+          {
+            method: 'POST',
+            headers: orcCallbackHeaders(),
+            body: JSON.stringify({
+              schema_version: 1,
+              event_id: orcWorkerEventId({
+                executionId: execution.executionId,
+                conversationId,
+                status,
+                sourceSequence: state.updatedAt,
+                message,
+              }),
+              source_sequence: state.updatedAt,
+              incarnation_id: conversationId,
+              emdash_task_id: execution.executionId,
+              execution_id: execution.executionId,
+              project_id: execution.projectId,
+              conversation_id: conversationId,
+              provider: state.providerId,
+              status,
+              notification_type: state.notificationType,
+              prompt_excerpt: message,
+              observed_at: new Date().toISOString(),
+            }),
+          }
+        );
+        if (response.ok) execution.lastStatus = state.status;
+        else if (status === 'blocked') pushedPromptFingerprints.delete(execution.executionId);
+      } catch {
+        // A focused reconciliation retries this retained terminal transition.
+        if (status === 'blocked') pushedPromptFingerprints.delete(execution.executionId);
+      }
     }
   };
 
@@ -311,6 +492,10 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
         await publishOrcTransitions();
       })
       .catch(() => {});
+    const reconciliationTimer = setInterval(() => {
+      transitionQueue = transitionQueue.then(publishOrcTransitions).catch(() => {});
+    }, 30_000);
+    reconciliationTimer.unref();
   }
 
   return createController(workspaceWireContract, {

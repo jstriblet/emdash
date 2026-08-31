@@ -103,6 +103,9 @@ export const orchestratorClaimedActionSchema = z.object({
 export const orchestratorActionCompletionSchema = z.object({ completed: z.boolean() });
 
 export const orchestratorWorkerTelemetryInputSchema = z.object({
+  eventId: z.string().min(1).optional(),
+  sourceSequence: z.number().int().nonnegative().optional(),
+  incarnationId: z.string().min(1).optional(),
   executionId: z.string().min(1),
   emdashTaskId: z.string().min(1),
   projectId: z.string().min(1),

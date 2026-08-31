@@ -1,5 +1,4 @@
 import { Markdown } from '@emdash/ui/react/components';
-import { ReplicaLog } from '@emdash/wire/live';
 import {
   useCallback,
   useEffect,
@@ -9,28 +8,13 @@ import {
   useState,
   type FormEvent,
 } from 'react';
-import { getConversationsClient } from '@core/features/conversations/api/browser/client';
-import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
 import { getMachinesClient } from '@core/features/machines/api/browser/client';
-import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
-import { getTaskComposition } from '@core/features/workbench/api/browser/task-composition-selectors';
-import { useNavigate } from '@core/primitives/navigation/browser/navigation-hooks';
-import type { OrchestratorEntry, OrchestratorHealth, OrchestratorPendingAction } from '../api';
+import type { OrchestratorEntry, OrchestratorHealth } from '../api';
 import { getOrchestratorClient } from '../api/browser/client';
-import {
-  createOrchestratedWorkSession,
-  type OrchestratedWorkStage,
-} from './orchestrated-work-request';
+import type { OrchestratedWorkStage } from './orchestrated-work-request';
 import { restoreOrchestratorConnection } from './orchestrator-auto-connect';
-import {
-  flushTerminalWrites,
-  rawTerminalPromptExcerpt,
-  selectWorkerConversation,
-  terminalPromptExcerpt,
-} from './worker-telemetry';
 
 const REFRESH_INTERVAL_MS = 2_000;
-const ARCHIVE_HANDOFF_TIMEOUT_MS = 15_000;
 const DISPLAY_TURNS = 4;
 const IS_DEVELOPMENT = import.meta.env.DEV;
 
@@ -50,27 +34,6 @@ export function escapeCancelAction(
 
 export function workingStatus(elapsedSeconds: number): string {
   return `Working (${elapsedSeconds}s • esc to interrupt)`;
-}
-
-async function readWorkerOutput(conversationId: string): Promise<string | undefined> {
-  let output = '';
-  const runtime = await getConversationsClient();
-  const replica = new ReplicaLog(runtime.tui.output.handle({ conversationId }), {
-    store: {
-      reset(data) {
-        output = data.text.slice(-64_000);
-      },
-      append(chunk) {
-        output = `${output}${chunk}`.slice(-64_000);
-      },
-    },
-  });
-  try {
-    await replica.ready;
-    return rawTerminalPromptExcerpt(output);
-  } finally {
-    await replica.dispose();
-  }
 }
 
 type OrcMachine = { id: string; name: string };
@@ -161,8 +124,11 @@ export function activityDetail(
   };
 }
 
-export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?: boolean } = {}) {
-  const { navigate } = useNavigate();
+export function ThreadPanel({
+  backgroundRuntime: _backgroundRuntime = false,
+}: {
+  backgroundRuntime?: boolean;
+} = {}) {
   const [entries, setEntries] = useState<OrchestratorEntry[]>([]);
   const [health, setHealth] = useState<OrchestratorHealth>();
   const [draft, setDraft] = useState('');
@@ -182,8 +148,6 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
   const shouldFollowThreadRef = useRef(true);
   const submittedTurnInFlightRef = useRef(false);
   const endRef = useRef<HTMLDivElement>(null);
-  const activeMcpActionIdsRef = useRef(new Set<string>());
-  const actionInFlightRef = useRef(false);
   const cancelConfirmationTimerRef = useRef<number | undefined>(undefined);
   const activeSendRef = useRef<Promise<unknown> | undefined>(undefined);
   const queuedFollowUpsRef = useRef<string[]>([]);
@@ -282,222 +246,6 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
     const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
-
-  const executeMcpAction = useCallback(
-    async (action: OrchestratorPendingAction) => {
-      if (activeMcpActionIdsRef.current.has(action.action_id)) return;
-      activeMcpActionIdsRef.current.add(action.action_id);
-      setSending(true);
-      setError(undefined);
-      try {
-        const client = await getOrchestratorClient();
-        if (action.kind === 'archive_worker') {
-          const manager = getTaskManagerStore(action.project_id);
-          if (!manager) throw new Error('Worker task manager is not available');
-          await Promise.race([
-            manager.archiveTask(action.emdash_task_id),
-            new Promise<void>((resolve) => window.setTimeout(resolve, ARCHIVE_HANDOFF_TIMEOUT_MS)),
-          ]);
-          await client.completeAction({ actionId: action.action_id });
-          await refresh();
-          return;
-        }
-        if (action.kind === 'restart_worker') {
-          const manager = getConversationsForTask(action.emdash_task_id);
-          const session = manager?.sessions.get(action.conversation_id);
-          const conversation = manager?.conversations.get(action.conversation_id)?.data;
-          if (!manager || !session || !conversation) {
-            throw new Error('Worker conversation is not available');
-          }
-          await manager.deleteConversation(action.conversation_id);
-          const replacement = await manager.createConversation({
-            id: crypto.randomUUID(),
-            projectId: conversation.projectId,
-            taskId: conversation.taskId,
-            provider: conversation.providerId,
-            title: conversation.title,
-            autoApprove: conversation.autoApprove,
-            model: conversation.model,
-            type: conversation.type,
-            isInitialConversation: conversation.isInitialConversation ?? undefined,
-            initialPrompt: action.goal,
-          });
-          const taskView = getTaskComposition(conversation.projectId, conversation.taskId);
-          taskView?.paneLayout.open(
-            replacement.type === 'acp' ? 'acp-chat' : 'conversation',
-            { conversationId: replacement.id },
-            { preview: false }
-          );
-          taskView?.setFocusedRegion('main');
-          await client.completeAction({ actionId: action.action_id });
-          await refresh();
-          return;
-        }
-        if (action.kind === 'send_worker_input') {
-          const conversationsClient = await getConversationsClient();
-          await conversationsClient.tui.sendInput({
-            conversationId: action.conversation_id,
-            data: action.input,
-          });
-          await client.completeAction({ actionId: action.action_id });
-          await refresh();
-          return;
-        }
-        await createOrchestratedWorkSession(
-          {
-            projectName: action.project_name,
-            hostName: action.host_name,
-            goal: action.goal,
-            agent: action.agent,
-          },
-          navigate,
-          async (stage, status, detail) => {
-            if (status === 'started') setWorkStage(stage);
-            await client.reportActionProgress({
-              actionId: action.action_id,
-              stage,
-              status,
-              detail,
-            });
-          }
-        );
-        await client.completeAction({ actionId: action.action_id });
-        await refresh();
-      } catch (cause) {
-        const detail = cause instanceof Error ? cause.message : 'MCP action failed';
-        setError(detail);
-        try {
-          await (
-            await getOrchestratorClient()
-          ).reportActionProgress({
-            actionId: action.action_id,
-            stage:
-              action.kind === 'send_worker_input'
-                ? 'Sending worker input'
-                : action.kind === 'archive_worker'
-                  ? 'Archiving completed worker'
-                  : 'Creating work session',
-            status: 'failed',
-            detail,
-          });
-        } catch {
-          // Preserve the original action error when reporting it also fails.
-        }
-      } finally {
-        activeMcpActionIdsRef.current.delete(action.action_id);
-        setSending(false);
-        setWorkStage(undefined);
-      }
-    },
-    [navigate, refresh]
-  );
-
-  useEffect(() => {
-    if (!backgroundRuntime) return;
-    let cancelled = false;
-    const poll = async () => {
-      if (actionInFlightRef.current) return;
-      try {
-        const { action } = await (await getOrchestratorClient()).claimAction(undefined);
-        if (!cancelled && action) {
-          actionInFlightRef.current = true;
-          void executeMcpAction(action).finally(() => {
-            actionInFlightRef.current = false;
-          });
-        }
-      } catch {
-        // Connection errors are already represented by the Thread panel health state.
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), REFRESH_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [backgroundRuntime, executeMcpAction]);
-
-  useEffect(() => {
-    if (!backgroundRuntime) return;
-    let cancelled = false;
-    const publishWorkerTelemetry = async () => {
-      try {
-        const client = await getOrchestratorClient();
-        const { workContracts } = await client.workContracts(undefined);
-        const executions = workContracts.flatMap((contract) => contract.executions);
-        await Promise.allSettled(
-          executions.map(async (execution) => {
-            if (cancelled) return;
-            const conversationManager = getConversationsForTask(execution.emdash_task_id);
-            const conversations = [...(conversationManager?.conversations.values() ?? [])].map(
-              (store) => ({ ...store.data, agentStatus: store.status })
-            );
-            const conversation = selectWorkerConversation(conversations);
-            const liveConversation = conversation
-              ? conversationManager?.conversations.get(conversation.id)
-              : undefined;
-            const session = conversation
-              ? conversationManager?.sessions.get(conversation.id)
-              : undefined;
-            let promptExcerpt: string | undefined;
-            try {
-              if (session && !session.pty) await session.connect();
-              await flushTerminalWrites(session?.pty?.terminal);
-              promptExcerpt = terminalPromptExcerpt(session?.pty?.terminal.buffer.active);
-              if (!promptExcerpt && conversation) {
-                promptExcerpt = await readWorkerOutput(conversation.id);
-              }
-            } catch (cause) {
-              promptExcerpt = `Unable to read worker terminal: ${cause instanceof Error ? cause.message : String(cause)}`;
-            }
-            const telemetry = {
-              executionId: execution.execution_id,
-              emdashTaskId: execution.emdash_task_id,
-              projectId: execution.project_id,
-              conversationId: conversation?.id,
-              sessionId: conversation?.sessionId,
-              provider: conversation?.providerId ?? execution.agent,
-              status:
-                liveConversation?.status ??
-                conversation?.agentStatus ??
-                (conversationManager ? 'idle' : 'session-unavailable'),
-              notificationType: liveConversation?.lastNotificationType,
-              promptExcerpt,
-              observedAt: new Date().toISOString(),
-            };
-            try {
-              await client.reportWorkerTelemetry(telemetry);
-            } catch {
-              await client.reportActionProgress({
-                actionId: execution.execution_id,
-                stage: 'Worker telemetry',
-                status: 'completed',
-                detail: JSON.stringify({
-                  emdash_task_id: telemetry.emdashTaskId,
-                  project_id: telemetry.projectId,
-                  conversation_id: telemetry.conversationId,
-                  session_id: telemetry.sessionId,
-                  provider: telemetry.provider,
-                  status: telemetry.status,
-                  notification_type: telemetry.notificationType,
-                  prompt_excerpt: telemetry.promptExcerpt,
-                  observed_at: telemetry.observedAt,
-                }),
-              });
-            }
-          })
-        );
-      } catch {
-        // The regular health poll owns connection error presentation.
-      }
-    };
-    void publishWorkerTelemetry();
-    const timer = window.setInterval(() => void publishWorkerTelemetry(), REFRESH_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [backgroundRuntime]);
 
   useLayoutEffect(() => {
     if (!shouldFollowThreadRef.current) return;

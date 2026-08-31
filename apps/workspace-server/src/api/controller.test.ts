@@ -23,7 +23,7 @@ import type { ContractClient } from '@emdash/wire/rpc';
 import { createTestWire } from '@emdash/wire/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestRuntimeClients, createTestWorkspaceWireController } from '../testing/controller';
-import { isInteractiveTerminalPrompt } from './controller';
+import { isInteractiveTerminalPrompt, orcWorkerEventId } from './controller';
 
 describe('isInteractiveTerminalPrompt', () => {
   it('recognizes a Claude workspace trust dialog after terminal cleanup', () => {
@@ -36,6 +36,22 @@ describe('isInteractiveTerminalPrompt', () => {
 
   it('ignores ordinary worker output', () => {
     expect(isInteractiveTerminalPrompt('Running tests and inspecting the diff.')).toBe(false);
+  });
+});
+
+describe('orcWorkerEventId', () => {
+  it('keeps retry identity stable and changes it for a later source transition', () => {
+    const transition = {
+      executionId: 'execution-1',
+      conversationId: 'conversation-1',
+      status: 'blocked',
+      sourceSequence: 42,
+      message: 'Need input',
+    };
+    expect(orcWorkerEventId(transition)).toBe(orcWorkerEventId({ ...transition }));
+    expect(orcWorkerEventId({ ...transition, sourceSequence: 43 })).not.toBe(
+      orcWorkerEventId(transition)
+    );
   });
 });
 
@@ -170,11 +186,12 @@ describe('createWorkspaceWireController', () => {
     };
     notify();
     await vi.waitFor(() => expect(requests).toHaveLength(2));
-    expect(requests[0]?.body.status).toBe('blocked');
-    expect(requests[1]).toMatchObject({
-      url: 'http://127.0.0.1:8790/message',
-      body: { text: 'Should the marker be BLUE or GREEN?' },
+    expect(requests[1]?.body.status).toBe('blocked');
+    expect(requests[1]?.body).toMatchObject({
+      schema_version: 1,
+      incarnation_id: 'conversation-push',
     });
+    expect(requests[1]?.body.event_id).toEqual(expect.any(String));
 
     state = { ...state, status: 'working', lastAssistantMessage: undefined, updatedAt: 3 };
     notify();
@@ -187,16 +204,12 @@ describe('createWorkspaceWireController', () => {
     };
     notify();
     await vi.waitFor(() => expect(requests).toHaveLength(4));
-    expect(requests[2]?.body.status).toBe('completed');
-    expect(requests[2]?.body.prompt_excerpt).toBe('Created and verified the requested file.');
-    expect(requests[2]?.body).toMatchObject({
+    expect(requests[3]?.body.status).toBe('completed');
+    expect(requests[3]?.body.prompt_excerpt).toBe('Created and verified the requested file.');
+    expect(requests[3]?.body).toMatchObject({
       execution_id: 'exec-push',
       conversation_id: 'conversation-push',
       project_id: '/home/user/src/bookscape',
-    });
-    expect(requests[3]).toMatchObject({
-      url: 'http://127.0.0.1:8790/message',
-      body: { text: 'Created and verified the requested file.' },
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(requests).toHaveLength(4);
@@ -215,9 +228,14 @@ describe('createWorkspaceWireController', () => {
       updatedAt: 2,
     };
     const source = {
-      snapshot: async () => ({ generation: 1, sequence: 1, timestamp: 1, data: {
-        'conversation-restored': state,
-      } }),
+      snapshot: async () => ({
+        generation: 1,
+        sequence: 1,
+        timestamp: 1,
+        data: {
+          'conversation-restored': state,
+        },
+      }),
       attach: async () => () => {},
       asLiveSource: () => ({
         snapshot: async () => ({ data: { 'conversation-restored': state } }),
@@ -268,7 +286,7 @@ describe('createWorkspaceWireController', () => {
       }
     );
 
-    await vi.waitFor(() => expect(requests).toHaveLength(2));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
     expect(requests[0]).toMatchObject({
       url: 'http://127.0.0.1:8790/workers/execution-restored/telemetry',
       body: {
@@ -277,10 +295,66 @@ describe('createWorkspaceWireController', () => {
         project_id: '/home/user/src/project',
       },
     });
-    expect(requests[1]).toMatchObject({
-      url: 'http://127.0.0.1:8790/message',
-      body: { text: 'Do you trust the contents of this directory? Press enter to continue' },
+    vi.unstubAllGlobals();
+  });
+
+  it('executes queued Orc input on the always-on server without a desktop renderer', async () => {
+    const runtimes = createTestRuntimeClients();
+    const sendInput = vi.fn(async () => ok(undefined));
+    const tuiAgents = Object.assign(runtimes.tuiAgents, { sendInput });
+    const automations = Object.assign(runtimes.automations, {
+      listRuns: vi.fn(async () =>
+        ok({
+          runs: [
+            {
+              id: 'run-1',
+              triggerKind: 'manual',
+              conversationId: 'conversation-1',
+            },
+          ],
+        })
+      ),
     });
+    const completed: string[] = [];
+    let claimed = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/actions/claim')) {
+          if (claimed) return { ok: true, json: async () => ({ action: null }) };
+          claimed = true;
+          return {
+            ok: true,
+            json: async () => ({
+              action: {
+                action_id: 'action-1',
+                kind: 'send_worker_input',
+                execution_id: 'execution-1',
+                input: 'continue',
+              },
+            }),
+          };
+        }
+        completed.push(url);
+        return { ok: true, json: async () => ({ completed: true }) };
+      })
+    );
+    const abort = new AbortController();
+    createTestWorkspaceWireController(
+      { automations, tuiAgents },
+      { enableOrcActionConsumer: true, orcActionSignal: abort.signal }
+    );
+
+    await vi.waitFor(() =>
+      expect(sendInput).toHaveBeenCalledWith({
+        conversationId: 'conversation-1',
+        data: 'continue\r',
+      })
+    );
+    await vi.waitFor(() =>
+      expect(completed).toContain('http://127.0.0.1:8790/actions/action-1/complete')
+    );
+    abort.abort();
     vi.unstubAllGlobals();
   });
 
