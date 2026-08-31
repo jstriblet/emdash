@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   activityDetail,
+  activityTone,
   escapeCancelAction,
   shouldFollowOrcThread,
+  transcriptLineTone,
   workingStatus,
 } from './thread-panel';
 
@@ -21,6 +23,23 @@ describe('activityDetail', () => {
       hidden: 0,
       lines: ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'],
     });
+  });
+});
+
+describe('terminal semantic colors', () => {
+  it('colors tool activity by meaning and status', () => {
+    expect(activityTone({ kind: 'command', status: 'completed' })).toBe('text-[#7dcfff]');
+    expect(activityTone({ kind: 'file_change', status: 'completed' })).toBe('text-[#9ece6a]');
+    expect(activityTone({ kind: 'tool', status: 'failed' })).toBe('text-[#f7768e]');
+    expect(activityTone({ kind: 'web_search', status: 'in_progress' })).toBe('text-[#e0af68]');
+  });
+
+  it('colors diff and result transcript lines without changing their text', () => {
+    expect(transcriptLineTone('+ added behavior')).toBe('text-[#9ece6a]');
+    expect(transcriptLineTone('- removed behavior')).toBe('text-[#f7768e]');
+    expect(transcriptLineTone('@@ changed hunk')).toBe('text-[#bb9af7]');
+    expect(transcriptLineTone('12 tests passed')).toBe('text-[#9ece6a]');
+    expect(transcriptLineTone('command failed')).toBe('text-[#f7768e]');
   });
 });
 

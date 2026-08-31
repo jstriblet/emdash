@@ -129,6 +129,26 @@ function activityHeading(activity: Activity): string {
   return activity.title;
 }
 
+export function activityTone(activity: Pick<Activity, 'kind' | 'status'>): string {
+  if (activity.status === 'failed') return 'text-[#f7768e]';
+  if (activity.status === 'in_progress') return 'text-[#e0af68]';
+  if (activity.kind === 'command') return 'text-[#7dcfff]';
+  if (activity.kind === 'file_change') return 'text-[#9ece6a]';
+  if (activity.kind === 'web_search') return 'text-[#bb9af7]';
+  if (activity.kind === 'plan') return 'text-[#e0af68]';
+  return 'text-[#b6b0a7]';
+}
+
+export function transcriptLineTone(line: string): string {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith('+') && !trimmed.startsWith('+++')) return 'text-[#9ece6a]';
+  if (trimmed.startsWith('-') && !trimmed.startsWith('---')) return 'text-[#f7768e]';
+  if (trimmed.startsWith('@@')) return 'text-[#bb9af7]';
+  if (/\b(error|failed|failure)\b/i.test(trimmed)) return 'text-[#f7768e]';
+  if (/\b(pass|passed|success|completed|finished)\b/i.test(trimmed)) return 'text-[#9ece6a]';
+  return 'text-[#7d7871]';
+}
+
 export function activityDetail(
   detail: string,
   expanded = false
@@ -729,15 +749,13 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                     key={entry.id}
                     className="mb-4 grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2"
                   >
-                    <span className={isWorking ? 'animate-pulse text-[#d8cdbd]' : 'text-[#88837c]'}>
+                    <span
+                      className={`${activityTone(activity)} ${isWorking ? 'animate-pulse' : ''}`}
+                    >
                       •
                     </span>
                     <div className="min-w-0 text-[#b6b0a7]">
-                      <div
-                        className={`break-words whitespace-pre-wrap ${
-                          activity.status === 'failed' ? 'text-[#c98279]' : ''
-                        }`}
-                      >
+                      <div className={`break-words whitespace-pre-wrap ${activityTone(activity)}`}>
                         {activityHeading(activity)}
                       </div>
                       {detail.lines.length > 0 && (
@@ -747,7 +765,9 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                               <span className="w-4 shrink-0 text-[#5f5b56]">
                                 {index === 0 ? '└' : ' '}
                               </span>
-                              <span className="min-w-0 break-words whitespace-pre-wrap">
+                              <span
+                                className={`min-w-0 break-words whitespace-pre-wrap ${transcriptLineTone(line)}`}
+                              >
                                 {line}
                               </span>
                             </div>
@@ -798,7 +818,7 @@ export function ThreadPanel({ backgroundRuntime = false }: { backgroundRuntime?:
                       <Markdown
                         content={entry.content}
                         variant="compact"
-                        className="max-w-none text-[#d2cdc5] [&_pre]:border [&_pre]:border-[#383633] [&_pre]:bg-[#0d0f11]"
+                        className="max-w-none text-[#d2cdc5] [&_a]:text-[#7dcfff] [&_a]:underline [&_blockquote]:border-[#bb9af7] [&_blockquote]:text-[#9d91bd] [&_code]:text-[#9ece6a] [&_h1]:text-[#7dcfff] [&_h2]:text-[#7dcfff] [&_h3]:text-[#bb9af7] [&_li::marker]:text-[#7dcfff] [&_pre]:border [&_pre]:border-[#383633] [&_pre]:bg-[#0d0f11] [&_pre_code]:text-[#c0caf5] [&_strong]:text-[#e0af68]"
                       />
                     )}
                   </div>
